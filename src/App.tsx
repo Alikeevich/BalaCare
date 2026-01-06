@@ -13,6 +13,7 @@ import LearningPage from './pages/LearningPage';
 import SupportPage from './pages/SupportPage';
 import CommunityPage from './pages/CommunityPage';
 import MarketPage from './pages/MarketPage';
+import ProfilePage from './pages/ProfilePage';
 
 const ONBOARDING_KEY = 'balaCareOnboardingSeen';
 
@@ -46,10 +47,11 @@ const AppContent = () => {
       case 'support': return <SupportPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
       case 'community': return <CommunityPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
       case 'market': return <MarketPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
+      case 'profile': return <ProfilePage onLogin={openAuth} />; // <--- НОВАЯ СТРОКА
       default: return <HomePage />;
     }
   };
-
+  
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900 selection:bg-purple-200">
       
