@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'; // Добавили BrowserRouter и Routes
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 // Компоненты
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import OnboardingScreen from './components/OnboardingScreen';
-import AuthModal from './components/AuthModal'; // Новый импорт
+import AuthModal from './components/AuthModal';
 
 // Страницы
 import HomePage from './pages/HomePage';
@@ -20,10 +21,12 @@ const ONBOARDING_KEY = 'balaCareOnboardingSeen';
 const AppContent = () => {
   const { session, profile, signOut } = useAuth();
   const [onboardingSeen, setOnboardingSeen] = useState(false);
-  const [currentPage, setCurrentPage] = useState('home');
-  
-  // Состояние для модального окна авторизации
   const [isAuthModalOpen, setAuthModalOpen] = useState(false);
+  
+  // Хук useLocation нужен, чтобы BottomNav знал, где мы находимся
+  // Но BottomNav сам может его использовать, здесь он не обязателен для рендера,
+  // но нужен, чтобы передать текущий путь в Nav, если мы не перепишем Nav.
+  // Давай сделаем Nav умнее (см. следующий шаг), а тут просто роуты.
 
   useEffect(() => {
     const seen = localStorage.getItem(ONBOARDING_KEY) === 'true';
@@ -36,28 +39,13 @@ const AppContent = () => {
   };
 
   const isLoggedIn = !!session;
-
-  // Функция для открытия модалки (передаем в хедер и на страницы)
   const openAuth = () => setAuthModalOpen(true);
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'home': return <HomePage />;
-      case 'learn': return <LearningPage />;
-      case 'support': return <SupportPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
-      case 'community': return <CommunityPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
-      case 'market': return <MarketPage isLoggedIn={isLoggedIn} onLogin={openAuth} />;
-      case 'profile': return <ProfilePage onLogin={openAuth} />;
-      default: return <HomePage />;
-    }
-  };
 
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900 selection:bg-purple-200">
       
       {!onboardingSeen && <OnboardingScreen onClose={handleOnboardingClose} />}
       
-      {/* Модальное окно авторизации */}
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setAuthModalOpen(false)} />
 
       <div className="max-w-xl mx-auto min-h-screen bg-white shadow-2xl relative">
@@ -69,16 +57,22 @@ const AppContent = () => {
         />
 
         <main className="animate-fade-in">
-          {renderPage()}
+          {/* НАСТОЯЩАЯ МАРШРУТИЗАЦИЯ */}
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/learn" element={<LearningPage />} />
+            <Route path="/support" element={<SupportPage />} />
+            <Route path="/community" element={<CommunityPage />} />
+            <Route path="/market" element={<MarketPage />} />
+            <Route path="/profile" element={<ProfilePage onLogin={openAuth} />} />
+            {/* Если путь не найден, вернем домой */}
+            <Route path="*" element={<HomePage />} />
+          </Routes>
         </main>
         
-        <BottomNav 
-          currentPath={currentPage} 
-          onNavigate={(path) => {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setCurrentPage(path);
-          }} 
-        />
+        {/* BottomNav теперь сам разберется с путями */}
+        <BottomNav /> 
+
       </div>
     </div>
   );
@@ -86,9 +80,12 @@ const AppContent = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    // ВАЖНО: BrowserRouter должен быть САМЫМ ВЕРХНИМ
+    <BrowserRouter>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
