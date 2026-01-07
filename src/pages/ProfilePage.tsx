@@ -4,28 +4,35 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import AuthGate from '../components/AuthGate';
 
+// Интерфейсы для API
+interface ApiCountry {
+  name: string;
+  Iso2: string;
+  Iso3: string;
+}
+
 const ProfilePage: React.FC = () => {
-  const { user, profile, loading: authLoading, signOut, openAuthModal } = useAuth();
-  
-  // Рефы для клика по скрытому инпуту
+  const { user, profile, loading: authLoading, signOut } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('parent');
   
-  // Локация
-  const [selectedCountryCode, setSelectedCountryCode] = useState('KZ');
+  // --- ЛОГИКА ЛОКАЦИИ (API) ---
+  const [countries, setCountries] = useState<ApiCountry[]>([]);
+  const [cities, setCities] = useState<string[]>([]);
+  
+  const [selectedCountryName, setSelectedCountryName] = useState('Kazakhstan'); // Имя для API
   const [selectedCity, setSelectedCity] = useState('');
   
   // Состояния загрузки
+  const [loadingCountries, setLoadingCountries] = useState(false);
+  const [loadingCities, setLoadingCities] = useState(false);
+  
   const [saving, setSaving] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false); // Отдельная загрузка для аватара
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
-  const countries = [{ isoCode: 'KZ', name: 'Казахстан' }, { isoCode: 'RU', name: 'Россия' }];
-  const cities = selectedCountryCode === 'KZ' 
-     ? [{ name: 'Алматы' }, { name: 'Астана' }, { name: 'Шымкент' }] 
-     : [{ name: 'Москва' }, { name: 'Санкт-Петербург' }];
-
+  // 1. Загрузка данных профиля
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name || '');
@@ -33,41 +40,78 @@ const ProfilePage: React.FC = () => {
       if (profile.city) {
           setSelectedCity(profile.city);
       }
+      // Примечание: Мы не храним страну в profiles, поэтому по дефолту Казахстан.
+      // В реальном проекте лучше добавить колонку country в таблицу profiles.
     }
   }, [profile]);
 
-  const handleCountryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      setSelectedCountryCode(e.target.value);
-      setSelectedCity('');
-  };
+  // 2. Загрузка списка СТРАН при открытии страницы
+  useEffect(() => {
+    const fetchCountries = async () => {
+        setLoadingCountries(true);
+        try {
+            const response = await fetch('https://countriesnow.space/api/v0.1/countries/iso');
+            const data = await response.json();
+            if (!data.error) {
+                setCountries(data.data);
+            }
+        } catch (e) {
+            console.error("Ошибка загрузки стран", e);
+        } finally {
+            setLoadingCountries(false);
+        }
+    };
+    fetchCountries();
+  }, []);
 
-  // --- ФУНКЦИЯ ЗАГРУЗКИ АВАТАРКИ ---
+  // 3. Загрузка списка ГОРОДОВ при смене страны
+  useEffect(() => {
+    const fetchCities = async () => {
+        if (!selectedCountryName) return;
+        setLoadingCities(true);
+        try {
+            const response = await fetch('https://countriesnow.space/api/v0.1/countries/cities', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ country: selectedCountryName })
+            });
+            const data = await response.json();
+            if (!data.error) {
+                setCities(data.data);
+            } else {
+                setCities([]); // Если городов нет
+            }
+        } catch (e) {
+            console.error("Ошибка загрузки городов", e);
+            setCities([]);
+        } finally {
+            setLoadingCities(false);
+        }
+    };
+
+    fetchCities();
+  }, [selectedCountryName]);
+
+
   const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     try {
-      if (!event.target.files || event.target.files.length === 0 || !user) {
-        return;
-      }
+      if (!event.target.files || event.target.files.length === 0 || !user) return;
       
       setUploadingAvatar(true);
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
-      // Генерируем уникальное имя файла: userID + случайное число + расширение
       const fileName = `${user.id}-${Math.random()}.${fileExt}`;
-      const filePath = `${fileName}`;
 
-      // 1. Загружаем файл в Storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file);
+        .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
-      // 2. Получаем публичную ссылку
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
-        .getPublicUrl(filePath);
+        .getPublicUrl(fileName);
 
-      // 3. Обновляем профиль в базе
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
@@ -76,17 +120,16 @@ const ProfilePage: React.FC = () => {
       if (updateError) throw updateError;
 
       alert('Аватарка обновлена!');
-      window.location.reload(); // Перезагрузка для обновления контекста
+      window.location.reload(); 
 
     } catch (error: any) {
-      console.error('Error uploading avatar:', error);
-      alert('Ошибка при загрузке фото: ' + error.message);
+      console.error(error);
+      alert('Ошибка: ' + error.message);
     } finally {
       setUploadingAvatar(false);
     }
   };
 
-  // Функция сохранения остальных данных
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -96,7 +139,7 @@ const ProfilePage: React.FC = () => {
         .from('profiles')
         .update({
           full_name: fullName,
-          city: selectedCity,
+          city: selectedCity, // Сохраняем выбранный город
           role: role as 'parent' | 'specialist'
         })
         .eq('id', user.id);
@@ -118,11 +161,7 @@ const ProfilePage: React.FC = () => {
       </div>
   );
   
-  if (!user) return (
-      <div className="pt-20 px-6">
-          <AuthGate />
-      </div>
-  );
+  if (!user) return <div className="pt-20 px-6"><AuthGate /></div>;
 
   return (
     <div className="pt-6 pb-24 bg-gray-50 min-h-screen">
@@ -137,7 +176,6 @@ const ProfilePage: React.FC = () => {
           
           <div className="relative z-10 mb-4 group">
             <div className="w-28 h-28 bg-white rounded-full overflow-hidden border-4 border-white shadow-lg relative">
-               {/* Отображение картинки или заглушки */}
                {uploadingAvatar ? (
                  <div className="w-full h-full flex items-center justify-center bg-gray-100">
                    <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
@@ -150,7 +188,6 @@ const ProfilePage: React.FC = () => {
                  </div>
                )}
                
-               {/* Оверлей загрузки (появляется при наведении или всегда на мобильных можно сделать кнопку рядом) */}
                <div 
                  onClick={() => fileInputRef.current?.click()}
                  className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
@@ -159,7 +196,6 @@ const ProfilePage: React.FC = () => {
                </div>
             </div>
 
-            {/* Кнопка-иконка камеры (для мобильных, чтобы было явно видно) */}
             <button 
               onClick={() => fileInputRef.current?.click()}
               className="absolute bottom-0 right-0 bg-purple-600 text-white p-2 rounded-full shadow-lg hover:bg-purple-700 transition-colors active:scale-90"
@@ -167,7 +203,6 @@ const ProfilePage: React.FC = () => {
               <Camera className="w-4 h-4" />
             </button>
 
-            {/* Скрытый инпут для файла */}
             <input 
               type="file" 
               ref={fileInputRef}
@@ -199,31 +234,50 @@ const ProfilePage: React.FC = () => {
             />
           </div>
 
-          {/* Выбор Страны */}
+          {/* ВЫБОР СТРАНЫ (API) */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Страна</label>
             <div className="relative">
               <Globe className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
               <select 
-                value={selectedCountryCode}
-                onChange={handleCountryChange}
+                value={selectedCountryName}
+                onChange={(e) => {
+                    setSelectedCountryName(e.target.value);
+                    setSelectedCity(''); // Сброс города при смене страны
+                }}
+                disabled={loadingCountries}
                 className="w-full pl-10 p-3 bg-gray-50 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium text-gray-800 appearance-none"
               >
-                  {countries.map((country) => (
-                      <option key={country.isoCode} value={country.isoCode}>
-                          {country.name}
-                      </option>
-                  ))}
+                  {loadingCountries ? (
+                      <option>Загрузка стран...</option>
+                  ) : (
+                      <>
+                        {/* Выводим Казахстан первым для удобства */}
+                        <option value="Kazakhstan">Kazakhstan</option>
+                        {countries
+                            .filter(c => c.name !== 'Kazakhstan')
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map((country) => (
+                                <option key={country.Iso2} value={country.name}>
+                                    {country.name}
+                                </option>
+                        ))}
+                      </>
+                  )}
               </select>
             </div>
           </div>
 
-          {/* Выбор Города */}
+          {/* ВЫБОР ГОРОДА (API) */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Город</label>
             <div className="relative">
               <MapPin className="absolute left-3 top-3.5 w-5 h-5 text-gray-400" />
-              {cities.length > 0 ? (
+              {loadingCities ? (
+                  <div className="w-full pl-10 p-3 bg-gray-50 rounded-xl border border-gray-200 text-gray-400 text-sm flex items-center">
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" /> Загрузка городов...
+                  </div>
+              ) : cities.length > 0 ? (
                   <select 
                     value={selectedCity}
                     onChange={e => setSelectedCity(e.target.value)}
@@ -231,12 +285,13 @@ const ProfilePage: React.FC = () => {
                   >
                     <option value="" disabled>Выберите город</option>
                     {cities.map((city) => (
-                        <option key={city.name} value={city.name}>
-                            {city.name}
+                        <option key={city} value={city}>
+                            {city}
                         </option>
                     ))}
                   </select>
               ) : (
+                  // Fallback (если города не загрузились или нет интернета)
                   <input 
                     type="text"
                     placeholder="Введите название города"
