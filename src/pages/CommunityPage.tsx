@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom'; // Импорт для работы с URL
 import { Loader2, Plus, MessageSquare, LayoutList, Image as ImageIcon, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/supabase';
@@ -8,7 +9,6 @@ import PostItem from '../components/PostItem';
 import ThreadView from '../components/ThreadView';
 import { ChatList } from './ChatPage';
 
-// Обновленный тип с post_media
 type PostWithData = Database['public']['Tables']['community_posts']['Row'] & {
   profiles: { full_name: string | null; avatar_url: string | null } | null;
   post_likes: { user_id: string }[]; 
@@ -18,12 +18,14 @@ type PostWithData = Database['public']['Tables']['community_posts']['Row'] & {
 const CommunityPage: React.FC = () => {
   const { user, openAuthModal } = useAuth();
   const isLoggedIn = !!user;
+  
+  // Хук для чтения параметров URL (?postId=...)
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<'feed' | 'chats'>('feed');
   const [posts, setPosts] = useState<PostWithData[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Создание поста
   const [isCreating, setIsCreating] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
   const [posting, setPosting] = useState(false);
@@ -35,12 +37,14 @@ const CommunityPage: React.FC = () => {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPosts();
+    fetchPostsAndHandleDeepLink();
   }, [user]); 
 
-  const fetchPosts = async () => {
+  // Основная функция загрузки
+  const fetchPostsAndHandleDeepLink = async () => {
+    setLoading(true);
     try {
-      // ОБЯЗАТЕЛЬНО добавляем post_media в запрос
+      // 1. Загружаем основную ленту
       let query = supabase
         .from('community_posts')
         .select(`
@@ -55,18 +59,64 @@ const CommunityPage: React.FC = () => {
       const { data, error } = await query;
 
       if (error) throw error;
+
+      let formattedPosts: PostWithData[] = [];
+
       if (data) {
-        const formattedData = data.map((post: any) => ({
+        formattedPosts = data.map((post: any) => ({
           ...post,
           post_likes: post.post_likes.filter((like: any) => like.user_id === user?.id)
         }));
-        setPosts(formattedData);
       }
+
+      // 2. Проверяем Deep Link (ссылку на конкретный пост)
+      const deepLinkPostId = searchParams.get('postId');
+      
+      if (deepLinkPostId) {
+        // Проверяем, есть ли пост уже в ленте
+        const existingPost = formattedPosts.find(p => p.id === deepLinkPostId);
+        
+        if (existingPost) {
+           setSelectedPostId(deepLinkPostId);
+        } else {
+           // Если поста нет в ленте (старый пост), загружаем его отдельно
+           const { data: singlePost, error: singleError } = await supabase
+             .from('community_posts')
+             .select(`
+                *,
+                profiles:user_id (full_name, avatar_url),
+                post_likes:post_likes(user_id),
+                post_media(media_url, media_type)
+              `)
+             .eq('id', deepLinkPostId)
+             .single();
+            
+            if (singlePost && !singleError) {
+                const formattedSingle = {
+                    ...singlePost,
+                    post_likes: singlePost.post_likes.filter((like: any) => like.user_id === user?.id)
+                };
+                // Добавляем этот пост в начало списка, чтобы он отобразился
+                // @ts-ignore
+                formattedPosts = [formattedSingle, ...formattedPosts];
+                setSelectedPostId(deepLinkPostId);
+            }
+        }
+      }
+
+      setPosts(formattedPosts);
+
     } catch (error) {
       console.error('Error fetching posts:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCloseThread = () => {
+      setSelectedPostId(null);
+      // Очищаем URL от параметра postId, не перезагружая страницу
+      setSearchParams({});
   };
 
   const handlePostUpdate = (postId: string, newLikeCount: number, isLiked: boolean) => {
@@ -86,12 +136,10 @@ const CommunityPage: React.FC = () => {
       }));
   };
 
-  // --- ОБРАБОТКА ВЫБОРА ФОТО ---
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setSelectedImage(file);
-      // Создаем URL для превью
       const previewUrl = URL.createObjectURL(file);
       setImagePreview(previewUrl);
     }
@@ -108,7 +156,6 @@ const CommunityPage: React.FC = () => {
     setPosting(true);
 
     try {
-      // 1. Создаем пост
       const { data: postData, error: postError } = await supabase
         .from('community_posts')
         .insert({
@@ -123,13 +170,12 @@ const CommunityPage: React.FC = () => {
 
       if (postError) throw postError;
 
-      // 2. Если есть картинка, загружаем её
       if (selectedImage && postData) {
          const fileExt = selectedImage.name.split('.').pop();
          const fileName = `${postData.id}/${Math.random()}.${fileExt}`;
          
          const { error: uploadError } = await supabase.storage
-            .from('post_images') // Бакет, который мы создали
+            .from('post_images')
             .upload(fileName, selectedImage);
 
          if (uploadError) throw uploadError;
@@ -138,7 +184,6 @@ const CommunityPage: React.FC = () => {
             .from('post_images')
             .getPublicUrl(fileName);
 
-         // 3. Создаем запись в post_media
          await supabase.from('post_media').insert({
              post_id: postData.id,
              media_url: publicUrl,
@@ -149,7 +194,8 @@ const CommunityPage: React.FC = () => {
       setNewPostContent('');
       clearImage();
       setIsCreating(false);
-      await fetchPosts();
+      // Перезагружаем посты
+      fetchPostsAndHandleDeepLink();
 
     } catch (error: any) {
       console.error(error);
@@ -181,7 +227,6 @@ const CommunityPage: React.FC = () => {
 
   return (
     <div className="pt-6 pb-24 bg-white min-h-screen relative">
-      {/* Header */}
       <div className="px-6 mb-4 sticky top-[60px] bg-white/95 backdrop-blur z-20 pt-2 border-b border-gray-100">
         <div className="flex justify-between items-center mb-3">
              <h1 className="text-3xl font-black text-gray-900">Сообщество</h1>
@@ -211,7 +256,6 @@ const CommunityPage: React.FC = () => {
         </div>
       </div>
 
-      {/* FEED TAB */}
       {activeTab === 'feed' && (
         <>
             {isCreating && (
@@ -234,7 +278,6 @@ const CommunityPage: React.FC = () => {
                                 autoFocus
                             />
 
-                            {/* Preview Image */}
                             {imagePreview && (
                                 <div className="relative w-full h-40 bg-gray-100 rounded-xl mb-3 overflow-hidden group">
                                     <img src={imagePreview} className="w-full h-full object-cover" alt="Preview" />
@@ -248,7 +291,6 @@ const CommunityPage: React.FC = () => {
                             )}
 
                             <div className="flex justify-between items-center mt-2 border-t border-gray-100 pt-2">
-                                {/* Image Upload Button */}
                                 <button 
                                     onClick={() => fileInputRef.current?.click()}
                                     className="text-gray-400 hover:text-purple-600 p-2 rounded-full hover:bg-gray-100"
@@ -259,7 +301,7 @@ const CommunityPage: React.FC = () => {
                                     type="file" 
                                     ref={fileInputRef} 
                                     className="hidden" 
-                                    accept="image/*" // ТОЛЬКО ФОТО
+                                    accept="image/*"
                                     onChange={handleImageSelect}
                                 />
 
@@ -303,16 +345,14 @@ const CommunityPage: React.FC = () => {
         </>
       )}
 
-      {/* CHATS TAB */}
       {activeTab === 'chats' && (
           isLoggedIn ? <ChatList /> : <div className="mt-10 px-4"><AuthGate /></div>
       )}
 
-      {/* Thread View Modal */}
       {selectedPost && (
          <ThreadView 
            post={selectedPost} 
-           onClose={() => setSelectedPostId(null)}
+           onClose={handleCloseThread} // Используем функцию с очисткой URL
            onPostUpdate={handlePostUpdate}
            onCommentAdded={() => handleCommentUpdate(selectedPost.id)}
            onStartChat={handleStartChat}
