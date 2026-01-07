@@ -1,11 +1,10 @@
 import React from 'react';
 import { Lock } from 'lucide-react';
+import { useAuth } from '../context/AuthContext'; // Импорт хука
 
-interface AuthGateProps {
-  onLogin: () => void;
-}
+const AuthGate: React.FC = () => {
+  const { openAuthModal } = useAuth(); // Берем функцию открытия
 
-const AuthGate: React.FC<AuthGateProps> = ({ onLogin }) => {
   return (
     <div className="flex flex-col items-center justify-center p-8 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 mt-4 mx-4">
       <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6 relative">
@@ -17,7 +16,7 @@ const AuthGate: React.FC<AuthGateProps> = ({ onLogin }) => {
         Чтобы пользоваться этой функцией, совершать покупки или писать в чат, пожалуйста, авторизуйтесь.
       </p>
       <button 
-        onClick={onLogin}
+        onClick={openAuthModal} // Вызываем открытие окна
         className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-bold shadow-lg hover:shadow-xl active:scale-95 transition-all"
       >
         Войти / Регистрация
