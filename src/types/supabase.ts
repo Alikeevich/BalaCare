@@ -236,9 +236,11 @@ export interface Database {
           post_id: string | null
           user_id: string | null
           content: string
+          parent_id: string | null
           created_at: string | null
           updated_at: string | null
         }
+
         Insert: {
           id?: string
           post_id?: string | null
@@ -255,6 +257,21 @@ export interface Database {
           created_at?: string | null
           updated_at?: string | null
         }
+      }
+      conversations: {
+        Row: { id: string; created_at: string; updated_at: string }
+        Insert: { id?: string; created_at?: string; updated_at?: string }
+        Update: { id?: string; created_at?: string; updated_at?: string }
+      }
+      conversation_participants: {
+        Row: { conversation_id: string; user_id: string; created_at: string }
+        Insert: { conversation_id: string; user_id: string; created_at?: string }
+        Update: { conversation_id?: string; user_id?: string; created_at?: string }
+      }
+      messages: {
+        Row: { id: string; conversation_id: string; user_id: string; content: string; is_read: boolean; created_at: string }
+        Insert: { id?: string; conversation_id: string; user_id: string; content: string; is_read?: boolean; created_at?: string }
+        Update: { id?: string; conversation_id?: string; user_id?: string; content?: string; is_read?: boolean; created_at?: string }
       }
       post_likes: {
         Row: {
