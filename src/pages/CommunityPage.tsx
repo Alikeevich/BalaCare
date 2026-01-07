@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, Plus, PenSquare } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Database } from '../types/supabase';
 import AuthGate from '../components/AuthGate';
@@ -7,7 +7,6 @@ import { useAuth } from '../context/AuthContext';
 import PostItem from '../components/PostItem';
 import ThreadView from '../components/ThreadView';
 
-// Расширяем тип поста: включаем лайки текущего юзера для проверки
 type PostWithData = Database['public']['Tables']['community_posts']['Row'] & {
   profiles: { full_name: string | null; avatar_url: string | null } | null;
   post_likes: { user_id: string }[]; 
@@ -20,22 +19,19 @@ const CommunityPage: React.FC = () => {
   const [posts, setPosts] = useState<PostWithData[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Состояния для создания поста
   const [isCreating, setIsCreating] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
   const [posting, setPosting] = useState(false);
 
-  // Состояния для просмотра треда (Threads View)
-  const [selectedPost, setSelectedPost] = useState<PostWithData | null>(null);
+  // Храним только ID выбранного поста, чтобы данные всегда брались из общего стейта
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPosts();
-  }, [user]); // Перезагружаем при входе/выходе, чтобы обновить состояние лайков
+  }, [user]); 
 
   const fetchPosts = async () => {
     try {
-      // Хитрость: мы джойним post_likes с фильтром по текущему user_id
-      // Если массив post_likes не пустой -> юзер лайкнул пост
       let query = supabase
         .from('community_posts')
         .select(`
@@ -46,20 +42,13 @@ const CommunityPage: React.FC = () => {
         .eq('is_visible', true)
         .order('created_at', { ascending: false });
 
-      // Если есть юзер, фильтруем лайки по нему, если нет - пустой список лайков придет
-      // (Supabase сложен в фильтрации вложенных ресурсов через JS клиент одной строкой, 
-      // но post_likes(user_id) вернет ВСЕ лайки если не отфильтровать.
-      // Для MVP загрузим все лайки поста, но это не идеально для big data.
-      // Правильно: использовать .eq('post_likes.user_id', user.id) но это работает как Inner Join.
-      // Оставим так для простоты, т.к. RLS не скрывает чужие лайки.
-      
       const { data, error } = await query;
 
       if (error) throw error;
       if (data) {
-        // Трансформируем данные, чтобы оставить только лайк текущего юзера в массиве (для PostItem)
         const formattedData = data.map((post: any) => ({
           ...post,
+          // Фильтруем лайки, оставляем только лайк текущего юзера
           post_likes: post.post_likes.filter((like: any) => like.user_id === user?.id)
         }));
         setPosts(formattedData);
@@ -69,6 +58,36 @@ const CommunityPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- ГЛАВНАЯ ФУНКЦИЯ СИНХРОНИЗАЦИИ ---
+  // Обновляет лайки в локальном стейте без перезагрузки
+  const handlePostUpdate = (postId: string, newLikeCount: number, isLiked: boolean) => {
+    setPosts(currentPosts => currentPosts.map(post => {
+      if (post.id === postId) {
+        // Обновляем счетчик и массив лайков
+        const updatedLikes = isLiked 
+           ? [{ user_id: user?.id || '' }] // Добавляем лайк
+           : []; // Убираем лайк
+           
+        return {
+          ...post,
+          like_count: newLikeCount,
+          post_likes: updatedLikes
+        };
+      }
+      return post;
+    }));
+  };
+  
+  // Обновляет комменты (тут проще перезагрузить посты или инкрементировать счетчик)
+  const handleCommentUpdate = (postId: string) => {
+      setPosts(currentPosts => currentPosts.map(post => {
+          if (post.id === postId) {
+              return { ...post, comment_count: (post.comment_count || 0) + 1 };
+          }
+          return post;
+      }));
   };
 
   const handleCreatePost = async () => {
@@ -81,7 +100,9 @@ const CommunityPage: React.FC = () => {
         .insert({
           user_id: user.id,
           content: newPostContent,
-          is_visible: true
+          is_visible: true,
+          like_count: 0,
+          comment_count: 0
         });
 
       if (error) throw error;
@@ -96,15 +117,14 @@ const CommunityPage: React.FC = () => {
     }
   };
 
+  // Вычисляем объект выбранного поста на лету
+  const selectedPost = posts.find(p => p.id === selectedPostId);
+
   return (
     <div className="pt-6 pb-24 bg-white min-h-screen relative">
-      {/* Шапка */}
+      {/* Header */}
       <div className="px-6 mb-4 flex justify-between items-center sticky top-[60px] bg-white/90 backdrop-blur z-20 py-2">
-        <div>
-           <h1 className="text-3xl font-black text-gray-900">Темы</h1>
-        </div>
-        
-        {/* Кнопка создания поста (Floating) */}
+        <h1 className="text-3xl font-black text-gray-900">Темы</h1>
         {isLoggedIn && !isCreating && (
           <button 
             onClick={() => setIsCreating(true)}
@@ -115,13 +135,12 @@ const CommunityPage: React.FC = () => {
         )}
       </div>
 
-      {/* Зона создания поста (появляется сверху) */}
+      {/* Create Post Area */}
       {isCreating && (
          <div className="px-6 mb-6 animate-fade-in">
             <div className="flex gap-4">
                <div className="flex flex-col items-center">
                   <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden mb-2">
-                     {/* Аватар юзера */}
                      <div className="w-full h-full bg-gradient-to-tr from-purple-400 to-pink-400"></div>
                   </div>
                   <div className="w-0.5 flex-1 bg-gray-200 rounded-full"></div>
@@ -151,7 +170,7 @@ const CommunityPage: React.FC = () => {
          </div>
       )}
 
-      {/* Лента */}
+      {/* Feed */}
       <div className="w-full">
          {loading ? (
             <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-600 w-8 h-8"/></div>
@@ -165,25 +184,26 @@ const CommunityPage: React.FC = () => {
                <PostItem 
                  key={post.id} 
                  post={post} 
-                 onCommentClick={() => setSelectedPost(post)}
+                 onCommentClick={() => setSelectedPostId(post.id)}
+                 onPostUpdate={handlePostUpdate} // Передаем функцию обновления
                />
             ))
          )}
       </div>
 
-      {/* Если не авторизован и хочет лайкнуть/написать (глобальный Gate внизу) */}
       {!isLoggedIn && posts.length > 0 && (
          <div className="mt-10 px-4">
             <AuthGate />
          </div>
       )}
 
-      {/* Просмотр треда (Full Screen Modal) */}
+      {/* Thread View Modal */}
       {selectedPost && (
          <ThreadView 
-           post={selectedPost} 
-           onClose={() => setSelectedPost(null)}
-           onUpdatePost={fetchPosts} 
+           post={selectedPost} // Передаем всегда АКТУАЛЬНЫЙ пост из стейта
+           onClose={() => setSelectedPostId(null)}
+           onPostUpdate={handlePostUpdate}
+           onCommentAdded={() => handleCommentUpdate(selectedPost.id)}
          />
       )}
     </div>
