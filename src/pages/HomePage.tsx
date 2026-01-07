@@ -37,7 +37,7 @@ const HomePage: React.FC = () => {
   ];
 
   return (
-    <div className="pb-24 space-y-6">
+    <div className="pb-8 space-y-6">
       {/* Hero Banner */}
       <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 rounded-b-[40px] shadow-2xl pb-10 pt-4 px-6 mb-8">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
@@ -59,7 +59,7 @@ const HomePage: React.FC = () => {
           Мы создали пространство заботы и поддержки для вас и вашего ребенка.
         </p>
 
-        {/* Поиск */}
+        {/* Поиск (визуальный, функционал можно расширить позже) */}
         <div className="bg-white p-2 rounded-2xl flex items-center shadow-lg transform translate-y-6">
           <Search className="w-5 h-5 text-gray-400 ml-2" />
           <input 
@@ -78,9 +78,9 @@ const HomePage: React.FC = () => {
             <button 
               key={i} 
               onClick={() => navigate(item.path)}
-              className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-start hover:shadow-md transition-all active:scale-95 text-left group"
+              className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-start hover:shadow-md transition-all active:scale-95 text-left"
             >
-              <div className={`${item.color} p-3 rounded-2xl mb-3 group-hover:scale-110 transition-transform`}>
+              <div className={`${item.color} p-3 rounded-2xl mb-3`}>
                 <IconComponent className="w-6 h-6" />
               </div>
               <h3 className="font-bold text-gray-800 text-base">{item.title}</h3>
@@ -94,7 +94,9 @@ const HomePage: React.FC = () => {
       <div className="mx-6 p-6 rounded-3xl bg-gradient-to-r from-green-400 to-emerald-600 text-white shadow-lg relative overflow-hidden">
         <Star className="absolute -top-2 -right-2 w-20 h-20 text-white/20 rotate-12" />
         <h3 className="font-bold text-lg mb-1 relative z-10">Совет дня</h3>
-        <p className="text-sm opacity-90 relative z-10">«Маленькие победы каждый день ведут к большим результатам. Верьте в себя!»</p>
+        <p className="text-sm opacity-90 relative z-10">
+          «Маленькие победы каждый день ведут к большим результатам. Верьте в себя!»
+        </p>
       </div>
     </div>
   );
