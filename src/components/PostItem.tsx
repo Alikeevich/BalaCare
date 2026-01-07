@@ -8,7 +8,6 @@ import ShareModal from './ShareModal';
 type PostWithData = Database['public']['Tables']['community_posts']['Row'] & {
   profiles: { full_name: string | null; avatar_url: string | null } | null;
   post_likes: { user_id: string }[];
-  // Добавляем массив медиа
   post_media?: { media_url: string; media_type: 'image' | 'video' }[]; 
 };
 
@@ -26,7 +25,7 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
   const likeCount = post.like_count || 0;
 
   const [animating, setAnimating] = useState(false);
-  const [shareModalOpen, setShareModalOpen] = useState(false); // Состояние для модалки шеринга
+  const [shareModalOpen, setShareModalOpen] = useState(false); 
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -66,7 +65,6 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
     return date.toLocaleDateString();
   };
 
-  // Получаем первое изображение (для MVP одна картинка на пост)
   const postImage = post.post_media && post.post_media.length > 0 ? post.post_media[0].media_url : null;
 
   return (
@@ -104,7 +102,6 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
                {post.content}
             </p>
 
-            {/* ОТОБРАЖЕНИЕ ФОТО */}
             {postImage && (
                 <div className="mt-2 mb-3 rounded-2xl overflow-hidden shadow-sm border border-gray-100 max-h-96">
                     <img src={postImage} alt="Post content" className="w-full h-full object-cover" />
@@ -150,13 +147,12 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
       </div>
     </div>
 
-    {/* SHARE MODAL */}
     <ShareModal 
         isOpen={shareModalOpen} 
         onClose={() => setShareModalOpen(false)} 
-        postText={post.content.slice(0, 100) + '...'}
-        // Генерируем ссылку (в идеале на страницу поста, но пока на общий раздел)
-        postUrl={`${window.location.origin}/community?post=${post.id}`}
+        postText={post.content.slice(0, 100) + (post.content.length > 100 ? '...' : '')}
+        // ГЕНЕРАЦИЯ ПРАВИЛЬНОЙ ССЫЛКИ
+        postUrl={`${window.location.origin}/community?postId=${post.id}`}
     />
     </>
   );
