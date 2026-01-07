@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Heart, MessageCircle, Share2, MoreHorizontal } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -19,28 +19,24 @@ interface PostItemProps {
 const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onCommentClick, onPostUpdate }) => {
   const { user, openAuthModal } = useAuth();
   
-  // Вычисляем состояние на основе пропсов (это гарантирует синхронизацию)
   const isLiked = user ? post.post_likes.some(like => like.user_id === user.id) : false;
   const likeCount = post.like_count || 0;
 
-  // Локальное состояние только для анимации
   const [animating, setAnimating] = useState(false);
   const [processing, setProcessing] = useState(false);
 
   const handleLike = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!user) return openAuthModal();
-    if (processing) return; // Защита от двойного клика
+    if (processing) return;
 
     setProcessing(true);
     setAnimating(true);
     setTimeout(() => setAnimating(false), 300);
 
-    // 1. Оптимистичные значения
     const newIsLiked = !isLiked;
     const newLikeCount = newIsLiked ? likeCount + 1 : likeCount - 1;
 
-    // 2. Сразу сообщаем родителю об изменении (UI обновится мгновенно везде)
     if (onPostUpdate) {
       onPostUpdate(post.id, newLikeCount, newIsLiked);
     }
@@ -48,19 +44,38 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
     try {
       if (newIsLiked) {
         const { error } = await supabase.from('post_likes').insert({ user_id: user.id, post_id: post.id });
-        if (error && error.code !== '23505') throw error; // Игнорируем ошибку дубликата
+        if (error && error.code !== '23505') throw error;
       } else {
         const { error } = await supabase.from('post_likes').delete().eq('user_id', user.id).eq('post_id', post.id);
         if (error) throw error;
       }
     } catch (err) {
       console.error("Like error:", err);
-      // Если ошибка - откатываем назад
-      if (onPostUpdate) {
-        onPostUpdate(post.id, likeCount, isLiked);
-      }
+      if (onPostUpdate) onPostUpdate(post.id, likeCount, isLiked);
     } finally {
       setProcessing(false);
+    }
+  };
+
+  // --- НОВАЯ ФУНКЦИЯ SHARE ---
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const shareData = {
+      title: 'BalaCare Пост',
+      text: post.content,
+      url: window.location.href, // Можно сделать ссылку на конкретный пост
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        // Fallback: Копирование в буфер
+        await navigator.clipboard.writeText(`${post.content}\n\nИсточник: BalaCare`);
+        alert('Текст поста скопирован!');
+      }
+    } catch (err) {
+      console.log('Share canceled');
     }
   };
 
@@ -109,7 +124,6 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
             </p>
 
             <div className="flex items-center gap-5 mt-2">
-               {/* Like Button */}
                <button 
                  onClick={handleLike}
                  className="flex items-center gap-1.5 group p-1 -ml-1 transition-transform active:scale-95"
@@ -128,7 +142,6 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
                  )}
                </button>
 
-               {/* Comment Indicator */}
                <button className="flex items-center gap-1.5 group p-1">
                  <MessageCircle className="w-5 h-5 text-gray-400 group-hover:text-purple-600 transition-colors" />
                  {(post.comment_count > 0 || isDetailView) && (
@@ -138,7 +151,7 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
                  )}
                </button>
 
-               <button className="p-1">
+               <button onClick={handleShare} className="p-1">
                  <Share2 className="w-5 h-5 text-gray-400 hover:text-gray-900 transition-colors" />
                </button>
             </div>
