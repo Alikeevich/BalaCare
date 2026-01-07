@@ -41,3 +41,13 @@ body {
   /* Чтобы на мобилках скролл был плавным */
   -webkit-tap-highlight-color: transparent;
 }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  /* Предотвращает белый экран при оттягивании страницы на iOS */
+  background-color: #F9FAFB; 
+  overscroll-behavior-y: none; 
+}
