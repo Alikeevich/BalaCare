@@ -1,14 +1,13 @@
 import React from 'react';
 import { Home, BookOpen, Heart, Users, ShoppingBag } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom'; // Импортируем хуки
+import { useNavigate, useLocation } from 'react-router-dom';
 
 const BottomNav: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Определяем текущий активный путь
   const currentPath = location.pathname;
-
+  
   const navItems = [
     { path: '/', label: 'Главная', Icon: Home },
     { path: '/learn', label: 'Учёба', Icon: BookOpen },
@@ -21,7 +20,6 @@ const BottomNav: React.FC = () => {
     <nav className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-gray-100 z-40 pb-safe pt-2 px-2 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
       <div className="flex justify-around items-center max-w-2xl mx-auto h-[60px] pb-2">
         {navItems.map((item) => {
-          // Проверка активности (сравнение путей)
           const isActive = currentPath === item.path;
           const isCenter = item.path === '/support';
           
