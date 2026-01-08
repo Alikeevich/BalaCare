@@ -99,7 +99,7 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
   );
 };
 
-// --- КОМПОНЕНТ: КОМНАТА ЧАТА (ФИНАЛЬНЫЙ ФИКС) ---
+// --- КОМПОНЕНТ: КОМНАТА ЧАТА (ФИКС ЗДЕСЬ) ---
 const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: string, otherUser: any, onClose: () => void }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -193,12 +193,14 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   };
 
   return (
-    // ФИКС: Убрали анимацию (animate-slide-in-right), так как она ломает fixed positioning.
-    // Используем простой fixed на весь экран с высочайшим z-index.
-    <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-full w-full">
+    // ФИКС CSS: 
+    // 1. h-[100dvh] - высота экрана
+    // 2. flex flex-col - колонка
+    // 3. overscroll-none - запрет "резинового" скролла всей страницы
+    <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh] overscroll-none">
        
-       {/* HEADER */}
-       <div className="flex-none px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-50">
+       {/* 1. ШАПКА: flex-none (не сжимается) */}
+       <div className="flex-none px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
           <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="w-6 h-6 text-gray-900"/>
           </button>
@@ -217,9 +219,12 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           </div>
        </div>
 
-       {/* MESSAGES LIST */}
-       {/* pb-[80px] - резервируем место под инпут, чтобы последние сообщения не перекрывались */}
-       <div className="flex-1 overflow-y-auto p-4 bg-[#e5e5e5] pb-[90px]">
+       {/* 2. СПИСОК СООБЩЕНИЙ: 
+           flex-1 (занимает всё доступное место)
+           overflow-y-auto (скроллится только этот блок)
+           min-h-0 (важно для flexbox, чтобы скролл работал)
+       */}
+       <div className="flex-1 overflow-y-auto min-h-0 p-4 bg-[#e5e5e5]">
           <div className="space-y-1">
             {messages.map((msg) => (
                 <MessageBubble 
@@ -230,12 +235,15 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                 />
             ))}
           </div>
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA */}
-       {/* ФИКС: absolute bottom-0. Гарантированно прибивает к низу экрана. */}
-       <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-3 pb-safe z-50">
+       {/* 3. ПОЛЕ ВВОДА: 
+           flex-none (не сжимается, всегда внизу)
+           bg-white (не прозрачный)
+           pb-safe (учитывает отступ для iPhone)
+       */}
+       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-safe z-30 w-full">
           <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
@@ -263,8 +271,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                 <Send className="w-5 h-5 ml-0.5" />
              </button>
           </div>
-          {/* Доп. отступ для iPhone Home Bar и нашего BottomNav, если вдруг он просвечивает */}
-          <div className="h-2"></div>
        </div>
     </div>
   );
