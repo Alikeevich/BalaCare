@@ -7,7 +7,7 @@ import UserSearch from '../components/UserSearch';
 
 // --- ТИПЫ ---
 type Message = Database['public']['Tables']['messages']['Row'] & {
-  reactions?: { emoji: string; user_id: string }[]; // Виртуальное поле, соберем вручную
+  reactions?: { emoji: string; user_id: string }[];
 };
 
 type Conversation = {
@@ -24,20 +24,17 @@ type Conversation = {
 const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
   const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
   
-  // Закрытие при клике вне
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
         // @ts-ignore
-        if (!e.target.closest('.reaction-picker')) {
-            onClose();
-        }
+        if (!e.target.closest('.reaction-picker')) onClose();
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
   return (
-    <div className="reaction-picker absolute -top-12 left-0 bg-white shadow-xl rounded-full px-3 py-2 flex gap-2 animate-scale-in z-10 border border-gray-100">
+    <div className="reaction-picker absolute -top-12 left-0 bg-white shadow-xl rounded-full px-3 py-2 flex gap-2 animate-scale-in z-50 border border-gray-100">
       {emojis.map(emoji => (
         <button 
           key={emoji} 
@@ -51,11 +48,10 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
   );
 };
 
-// --- КОМПОНЕНТ: СООБЩЕНИЕ ---
+// --- КОМПОНЕНТ: ПУЗЫРЬ СООБЩЕНИЯ ---
 const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, onReact: (id: string, emoji: string) => void }) => {
   const [showReactions, setShowReactions] = useState(false);
 
-  // Группируем реакции (например: ❤️: 2, 😂: 1)
   const reactionCounts = (msg.reactions || []).reduce((acc, r) => {
     acc[r.emoji] = (acc[r.emoji] || 0) + 1;
     return acc;
@@ -65,7 +61,6 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
     <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-3 relative group`}>
       <div className={`max-w-[75%] relative ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
         
-        {/* Само сообщение */}
         <div 
           onClick={() => setShowReactions(!showReactions)}
           className={`px-4 py-2 text-sm shadow-sm relative cursor-pointer select-none transition-all ${
@@ -74,7 +69,6 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
               : 'bg-white text-gray-900 rounded-2xl rounded-tl-sm border border-gray-100'
           }`}
         >
-          {/* Меню реакций (появляется при клике) */}
           {showReactions && (
              <ReactionPicker 
                onClose={() => setShowReactions(false)} 
@@ -90,11 +84,10 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
           </div>
         </div>
 
-        {/* Отображение поставленных реакций */}
         {Object.keys(reactionCounts).length > 0 && (
           <div className={`flex gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
              {Object.entries(reactionCounts).map(([emoji, count]) => (
-                <div key={emoji} className="bg-gray-100 border border-white shadow-sm rounded-full px-1.5 py-0.5 text-xs flex items-center gap-1">
+                <div key={emoji} className="bg-white/80 border border-gray-100 shadow-sm rounded-full px-1.5 py-0.5 text-xs flex items-center gap-1">
                    <span>{emoji}</span>
                    {count > 1 && <span className="font-bold text-gray-600">{count}</span>}
                 </div>
@@ -116,7 +109,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   useEffect(() => {
     fetchMessages();
 
-    // Подписка на сообщения И реакции
     const channel = supabase
       .channel(`room:${conversationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
@@ -128,7 +120,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
         () => {
-           // При любой реакции просто обновляем все сообщения (проще, чем искать какое обновить)
            fetchMessages(); 
       })
       .subscribe();
@@ -137,7 +128,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   }, [conversationId]);
 
   const fetchMessages = async () => {
-    // Получаем сообщения
     const { data: msgs } = await supabase
       .from('messages')
       .select('*')
@@ -145,14 +135,12 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       .order('created_at', { ascending: true });
 
     if (msgs) {
-        // Получаем все реакции для этих сообщений
         const msgIds = msgs.map(m => m.id);
         const { data: reactions } = await supabase
             .from('message_reactions')
             .select('message_id, emoji, user_id')
             .in('message_id', msgIds);
 
-        // Объединяем
         const combined = msgs.map(m => ({
             ...m,
             reactions: reactions?.filter(r => r.message_id === m.id) || []
@@ -165,7 +153,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
 
   const scrollToBottom = () => {
     setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
     }, 100);
   };
 
@@ -186,32 +174,12 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     }
   };
 
-  const handleReaction = async (messageId: string, emoji: string) => {
-      if (!user) return;
-      try {
-          // Проверяем, ставил ли я уже такую реакцию
-          const { error } = await supabase.from('message_reactions').insert({
-              message_id: messageId,
-              user_id: user.id,
-              emoji: emoji
-          });
-          
-          // Если ошибка дубликата (уже стоит) - удаляем (toggle)
-          if (error?.code === '23505') {
-              await supabase.from('message_reactions').delete()
-                .eq('message_id', messageId)
-                .eq('user_id', user.id)
-                .eq('emoji', emoji);
-          }
-      } catch (e) {
-          console.error(e);
-      }
-  };
-
   return (
-    <div className="fixed inset-0 z-[60] bg-[#F2F2F7] flex flex-col animate-slide-in-right">
-       {/* HEADER */}
-       <div className="px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
+    // ВАЖНО: h-[100dvh] для мобильных браузеров, чтобы клавиатура не ломала верстку
+    <div className="fixed inset-0 z-[60] bg-[#F2F2F7] flex flex-col h-[100dvh] animate-slide-in-right">
+       
+       {/* HEADER (Фиксированный размер) */}
+       <div className="flex-none px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
           <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="w-6 h-6 text-gray-900"/>
           </button>
@@ -230,10 +198,9 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           </div>
        </div>
 
-       {/* MESSAGES LIST */}
+       {/* MESSAGES LIST (Растягивается) */}
        <div 
          className="flex-1 overflow-y-auto p-4 bg-[#e5e5e5]" 
-         style={{ backgroundImage: 'url("https://blog.1a23.com/wp-content/uploads/sites/2/2020/02/Desktop.png")', backgroundSize: 'cover' }} // Фон как в Telegram (опционально)
        >
           <div className="space-y-1">
             {messages.map((msg) => (
@@ -248,10 +215,10 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA */}
-       <div className="bg-white border-t border-gray-200 p-3 pb-safe z-20">
-          <div className="flex items-end gap-2 bg-gray-100 p-2 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
-             <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
+       {/* INPUT AREA (Фиксированный размер внизу) */}
+       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-safe z-20 w-full">
+          <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
+             <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
              </button>
              
@@ -265,25 +232,42 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                    }
                }}
                placeholder="Сообщение..."
-               className="flex-1 bg-transparent py-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500"
+               className="flex-1 bg-transparent py-2 px-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500 min-h-[40px]"
                rows={1}
-               style={{ minHeight: '40px' }}
              />
              
-             {newMessage.trim() ? (
-                 <button 
-                   onClick={sendMessage} 
-                   className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white shadow-md hover:bg-purple-700 transition-colors animate-scale-in"
-                 >
-                    <Send className="w-5 h-5 ml-0.5" />
-                 </button>
-             ) : (
-                 <div className="w-10 h-10" /> // Заглушка, чтобы не прыгало
-             )}
+             <button 
+                onClick={sendMessage} 
+                disabled={!newMessage.trim()}
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-md flex-shrink-0 ${newMessage.trim() ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-200 text-gray-400'}`}
+             >
+                <Send className="w-5 h-5 ml-0.5" />
+             </button>
           </div>
        </div>
     </div>
   );
+
+  // Хелпер для реакций (нужен внутри компонента)
+  async function handleReaction(messageId: string, emoji: string) {
+      if (!user) return;
+      try {
+          const { error } = await supabase.from('message_reactions').insert({
+              message_id: messageId,
+              user_id: user.id,
+              emoji: emoji
+          });
+          
+          if (error?.code === '23505') {
+              await supabase.from('message_reactions').delete()
+                .eq('message_id', messageId)
+                .eq('user_id', user.id)
+                .eq('emoji', emoji);
+          }
+      } catch (e) {
+          console.error(e);
+      }
+  }
 };
 
 // --- СПИСОК ЧАТОВ ---
