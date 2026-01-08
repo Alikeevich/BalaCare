@@ -193,11 +193,10 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   };
 
   return (
-    // ФИКС 1: "fixed inset-0" с высоким z-index. h-[100dvh] для мобилок.
-    <div className="fixed inset-0 z-[2000] bg-[#F2F2F7] flex flex-col h-[100dvh]">
+    <div className="fixed inset-0 z-[9999] bg-[#F2F2F7] flex flex-col">
        
-       {/* HEADER: shrink-0 гарантирует, что он не сожмется */}
-       <div className="shrink-0 px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
+       {/* HEADER */}
+       <div className="flex-shrink-0 px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 shadow-sm">
           <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="w-6 h-6 text-gray-900"/>
           </button>
@@ -216,10 +215,8 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           </div>
        </div>
 
-       {/* MESSAGES LIST: flex-1 + min-h-0 
-           min-h-0 - это КЛЮЧЕВОЙ фикс. Он позволяет блоку сжиматься, освобождая место для инпута. 
-       */}
-       <div className="flex-1 overflow-y-auto min-h-0 p-4 bg-[#e5e5e5]">
+       {/* MESSAGES LIST */}
+       <div className="flex-1 overflow-y-auto p-4 bg-[#e5e5e5]" style={{ minHeight: 0 }}>
           <div className="space-y-1">
             {messages.map((msg) => (
                 <MessageBubble 
@@ -233,8 +230,8 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA: shrink-0, чтобы его не сплющило */}
-       <div className="shrink-0 bg-white border-t border-gray-200 p-3 pb-safe z-30 w-full">
+       {/* INPUT AREA - КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ */}
+       <div className="flex-shrink-0 bg-white border-t border-gray-200 p-3 w-full">
           <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
@@ -250,8 +247,9 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                    }
                }}
                placeholder="Сообщение..."
-               className="flex-1 bg-transparent py-2 px-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500 min-h-[40px]"
+               className="flex-1 bg-transparent py-2 px-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500"
                rows={1}
+               style={{ minHeight: '40px' }}
              />
              
              <button 
