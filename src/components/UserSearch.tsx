@@ -51,11 +51,11 @@ const UserSearch: React.FC<UserSearchProps> = ({ onUserSelect, onClose }) => {
   }, [query]);
 
   return (
-    // z-[100] гарантирует, что окно будет поверх всего
-    <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-fade-in">
+    // z-[9999] - выше navbar (z-40) и выше кнопки создания чата (z-40)
+    <div className="fixed inset-0 z-[9999] bg-white flex flex-col animate-fade-in">
       
       {/* Шапка поиска */}
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 bg-white pt-safe-top">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 bg-white flex-shrink-0">
         <button 
           onClick={onClose}
           className="p-2 -ml-2 rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors"
@@ -64,7 +64,7 @@ const UserSearch: React.FC<UserSearchProps> = ({ onUserSelect, onClose }) => {
         </button>
         
         <div className="flex-1 bg-gray-100 rounded-2xl flex items-center px-4 py-2.5">
-           <Search className="w-5 h-5 text-gray-400 mr-2" />
+           <Search className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" />
            <input 
              id="user-search-input"
              value={query} 
