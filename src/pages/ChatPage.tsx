@@ -26,8 +26,8 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
   
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.reaction-picker')) onClose();
+        // @ts-ignore
+        if (!e.target.closest('.reaction-picker')) onClose();
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -106,7 +106,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const inputContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchMessages();
@@ -194,30 +193,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       } catch (e) { console.error(e); }
   };
 
-  // Обработчик скролла - фиксируем инпут
-  useEffect(() => {
-    const handleScroll = () => {
-      if (inputContainerRef.current) {
-        // При скролле делаем инпут фиксированным
-        if (chatContainerRef.current && chatContainerRef.current.scrollTop > 50) {
-          inputContainerRef.current.style.position = 'fixed';
-          inputContainerRef.current.style.bottom = '0';
-          inputContainerRef.current.style.left = '0';
-          inputContainerRef.current.style.right = '0';
-          inputContainerRef.current.style.zIndex = '9999';
-        } else {
-          inputContainerRef.current.style.position = 'relative';
-        }
-      }
-    };
-
-    const chatContainer = chatContainerRef.current;
-    if (chatContainer) {
-      chatContainer.addEventListener('scroll', handleScroll);
-      return () => chatContainer.removeEventListener('scroll', handleScroll);
-    }
-  }, []);
-
   return (
     <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh]">
        
@@ -256,13 +231,12 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA - ФИКСИРОВАННЫЙ */}
-       <div 
-         ref={inputContainerRef}
-         className="flex-none bg-white border-t border-gray-200 p-3 z-30 w-full sticky bottom-0"
-         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}
-       >
-          <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
+       {/* INPUT AREA - ФИКСИРОВАННЫЙ И ПРАВИЛЬНОЙ ВЫСОТЫ */}
+       <div className="flex-none bg-white border-t border-gray-200 p-4 z-50 w-full fixed bottom-0 left-0 right-0 shadow-lg"
+           style={{ 
+             paddingBottom: 'calc(1rem + max(env(safe-area-inset-bottom, 0px), 80px))'
+           }}>
+          <div className="flex items-end gap-2 bg-gray-100 p-2 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
              </button>
@@ -277,14 +251,18 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                    }
                }}
                placeholder="Сообщение..."
-               className="flex-1 bg-transparent py-2 px-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500 min-h-[40px]"
+               className="flex-1 bg-transparent py-2 px-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500 min-h-[44px] leading-relaxed"
                rows={1}
              />
              
              <button 
                 onClick={sendMessage} 
                 disabled={!newMessage.trim()}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-md flex-shrink-0 ${newMessage.trim() ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-200 text-gray-400'}`}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-md flex-shrink-0 ${
+                  newMessage.trim() 
+                    ? 'bg-purple-600 text-white hover:bg-purple-700 active:scale-95' 
+                    : 'bg-gray-200 text-gray-400'
+                }`}
              >
                 <Send className="w-5 h-5 ml-0.5" />
              </button>
