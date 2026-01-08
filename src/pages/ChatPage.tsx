@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, ArrowLeft, Send, User, Plus } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck } from 'lucide-react';
 import { Database } from '../types/supabase';
-import UserSearch from '../components/UserSearch'; // Убедитесь, что этот компонент создан
+import UserSearch from '../components/UserSearch';
 
 // --- ТИПЫ ---
-type Message = Database['public']['Tables']['messages']['Row'];
+type Message = Database['public']['Tables']['messages']['Row'] & {
+  reactions?: { emoji: string; user_id: string }[]; // Виртуальное поле, соберем вручную
+};
 
 type Conversation = {
   id: string;
@@ -18,16 +20,94 @@ type Conversation = {
   } | null;
 };
 
-// --- КОМПОНЕНТ КОМНАТЫ ЧАТА (Внутренний) ---
-const ChatRoom = ({ 
-  conversationId, 
-  otherUser, 
-  onClose 
-}: { 
-  conversationId: string, 
-  otherUser: any, 
-  onClose: () => void 
-}) => {
+// --- КОМПОНЕНТ: ВЫБОР РЕАКЦИИ ---
+const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
+  const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+  
+  // Закрытие при клике вне
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+        // @ts-ignore
+        if (!e.target.closest('.reaction-picker')) {
+            onClose();
+        }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <div className="reaction-picker absolute -top-12 left-0 bg-white shadow-xl rounded-full px-3 py-2 flex gap-2 animate-scale-in z-10 border border-gray-100">
+      {emojis.map(emoji => (
+        <button 
+          key={emoji} 
+          onClick={(e) => { e.stopPropagation(); onSelect(emoji); }}
+          className="hover:scale-125 transition-transform text-lg leading-none"
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// --- КОМПОНЕНТ: СООБЩЕНИЕ ---
+const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, onReact: (id: string, emoji: string) => void }) => {
+  const [showReactions, setShowReactions] = useState(false);
+
+  // Группируем реакции (например: ❤️: 2, 😂: 1)
+  const reactionCounts = (msg.reactions || []).reduce((acc, r) => {
+    acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return (
+    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-3 relative group`}>
+      <div className={`max-w-[75%] relative ${isMe ? 'items-end' : 'items-start'} flex flex-col`}>
+        
+        {/* Само сообщение */}
+        <div 
+          onClick={() => setShowReactions(!showReactions)}
+          className={`px-4 py-2 text-sm shadow-sm relative cursor-pointer select-none transition-all ${
+            isMe 
+              ? 'bg-purple-600 text-white rounded-2xl rounded-tr-sm' 
+              : 'bg-white text-gray-900 rounded-2xl rounded-tl-sm border border-gray-100'
+          }`}
+        >
+          {/* Меню реакций (появляется при клике) */}
+          {showReactions && (
+             <ReactionPicker 
+               onClose={() => setShowReactions(false)} 
+               onSelect={(emoji) => { onReact(msg.id, emoji); setShowReactions(false); }} 
+             />
+          )}
+
+          <p className="whitespace-pre-wrap leading-relaxed pb-1">{msg.content}</p>
+          
+          <div className={`text-[10px] flex items-center justify-end gap-1 ${isMe ? 'text-purple-200' : 'text-gray-400'}`}>
+             <span>{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+             {isMe && (msg.is_read ? <CheckCheck className="w-3 h-3" /> : <Check className="w-3 h-3" />)}
+          </div>
+        </div>
+
+        {/* Отображение поставленных реакций */}
+        {Object.keys(reactionCounts).length > 0 && (
+          <div className={`flex gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+             {Object.entries(reactionCounts).map(([emoji, count]) => (
+                <div key={emoji} className="bg-gray-100 border border-white shadow-sm rounded-full px-1.5 py-0.5 text-xs flex items-center gap-1">
+                   <span>{emoji}</span>
+                   {count > 1 && <span className="font-bold text-gray-600">{count}</span>}
+                </div>
+             ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- КОМПОНЕНТ: КОМНАТА ЧАТА ---
+const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: string, otherUser: any, onClose: () => void }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -36,22 +116,20 @@ const ChatRoom = ({
   useEffect(() => {
     fetchMessages();
 
-    // Подписка на новые сообщения в ЭТОМ чате
+    // Подписка на сообщения И реакции
     const channel = supabase
-      .channel(`chat:${conversationId}`)
-      .on('postgres_changes', { 
-         event: 'INSERT', 
-         schema: 'public', 
-         table: 'messages', 
-         filter: `conversation_id=eq.${conversationId}` 
-      }, (payload) => {
-         const newMsg = payload.new as Message;
-         // Добавляем сообщение, если его еще нет (защита от дублей)
-         setMessages(prev => {
-             if (prev.some(m => m.id === newMsg.id)) return prev;
-             return [...prev, newMsg];
-         });
-         scrollToBottom();
+      .channel(`room:${conversationId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
+        (payload) => {
+           if (payload.eventType === 'INSERT') {
+               setMessages(prev => [...prev, { ...payload.new as Message, reactions: [] }]);
+               scrollToBottom();
+           }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
+        () => {
+           // При любой реакции просто обновляем все сообщения (проще, чем искать какое обновить)
+           fetchMessages(); 
       })
       .subscribe();
 
@@ -59,14 +137,28 @@ const ChatRoom = ({
   }, [conversationId]);
 
   const fetchMessages = async () => {
-    const { data } = await supabase
+    // Получаем сообщения
+    const { data: msgs } = await supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
-    
-    if (data) {
-        setMessages(data);
+
+    if (msgs) {
+        // Получаем все реакции для этих сообщений
+        const msgIds = msgs.map(m => m.id);
+        const { data: reactions } = await supabase
+            .from('message_reactions')
+            .select('message_id, emoji, user_id')
+            .in('message_id', msgIds);
+
+        // Объединяем
+        const combined = msgs.map(m => ({
+            ...m,
+            reactions: reactions?.filter(r => r.message_id === m.id) || []
+        }));
+
+        setMessages(combined);
         scrollToBottom();
     }
   };
@@ -80,78 +172,89 @@ const ChatRoom = ({
   const sendMessage = async () => {
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
-    setNewMessage(''); // Очищаем сразу для UX
+    setNewMessage('');
 
     try {
-        const { error } = await supabase.from('messages').insert({
+        await supabase.from('messages').insert({
             conversation_id: conversationId,
             user_id: user.id,
             content: content
         });
-
-        if (error) throw error;
-
-        // Обновляем время последнего сообщения в чате (чтобы поднять его в списке)
-        await supabase
-            .from('conversations')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', conversationId);
-            
+        await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
     } catch (e) {
-        console.error("Ошибка отправки:", e);
-        alert("Не удалось отправить сообщение");
+        alert("Ошибка отправки");
     }
   };
 
+  const handleReaction = async (messageId: string, emoji: string) => {
+      if (!user) return;
+      try {
+          // Проверяем, ставил ли я уже такую реакцию
+          const { error } = await supabase.from('message_reactions').insert({
+              message_id: messageId,
+              user_id: user.id,
+              emoji: emoji
+          });
+          
+          // Если ошибка дубликата (уже стоит) - удаляем (toggle)
+          if (error?.code === '23505') {
+              await supabase.from('message_reactions').delete()
+                .eq('message_id', messageId)
+                .eq('user_id', user.id)
+                .eq('emoji', emoji);
+          }
+      } catch (e) {
+          console.error(e);
+      }
+  };
+
   return (
-    <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-slide-in-right">
-       {/* Шапка чата */}
-       <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 bg-white/90 backdrop-blur shadow-sm pt-safe-top">
-          <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full">
-              <ArrowLeft className="w-6 h-6 text-gray-700"/>
+    <div className="fixed inset-0 z-[60] bg-[#F2F2F7] flex flex-col animate-slide-in-right">
+       {/* HEADER */}
+       <div className="px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 pt-safe-top shadow-sm z-20">
+          <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
+              <ArrowLeft className="w-6 h-6 text-gray-900"/>
           </button>
           
           <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-gray-100">
              {otherUser?.avatar_url ? (
-                 <img src={otherUser.avatar_url} className="w-full h-full object-cover" alt="Avatar"/>
+                 <img src={otherUser.avatar_url} className="w-full h-full object-cover" alt="User"/>
              ) : (
                  <div className="w-full h-full bg-gradient-to-tr from-blue-400 to-green-400"></div>
              )}
           </div>
           
           <div className="flex-1 min-w-0">
-              <span className="font-bold text-gray-900 block truncate leading-tight">
-                  {otherUser?.full_name || 'Собеседник'}
-              </span>
-              <span className="text-xs text-green-500 font-medium">Онлайн</span>
+              <span className="font-bold text-gray-900 block truncate">{otherUser?.full_name || 'Собеседник'}</span>
+              <span className="text-xs text-gray-500">в сети</span>
           </div>
        </div>
 
-       {/* Список сообщений */}
-       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#f0f2f5]">
-          {messages.map((msg) => {
-             const isMe = msg.user_id === user?.id;
-             return (
-               <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] px-4 py-2 rounded-2xl text-sm shadow-sm ${
-                     isMe 
-                       ? 'bg-purple-600 text-white rounded-tr-none' 
-                       : 'bg-white text-gray-900 rounded-tl-none border border-gray-200'
-                  }`}>
-                     <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                     <div className={`text-[10px] mt-1 text-right opacity-70`}>
-                        {new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                     </div>
-                  </div>
-               </div>
-             );
-          })}
-          <div ref={messagesEndRef} />
+       {/* MESSAGES LIST */}
+       <div 
+         className="flex-1 overflow-y-auto p-4 bg-[#e5e5e5]" 
+         style={{ backgroundImage: 'url("https://blog.1a23.com/wp-content/uploads/sites/2/2020/02/Desktop.png")', backgroundSize: 'cover' }} // Фон как в Telegram (опционально)
+       >
+          <div className="space-y-1">
+            {messages.map((msg) => (
+                <MessageBubble 
+                    key={msg.id} 
+                    msg={msg} 
+                    isMe={msg.user_id === user?.id} 
+                    onReact={handleReaction} 
+                />
+            ))}
+          </div>
+          <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* Поле ввода */}
-       <div className="p-3 bg-white border-t border-gray-100 pb-safe">
-          <div className="flex items-end gap-2 bg-gray-50 p-2 rounded-3xl border border-gray-200 focus-within:border-purple-300 transition-all">
+       {/* INPUT AREA */}
+       <div className="bg-white border-t border-gray-200 p-3 pb-safe z-20">
+          <div className="flex items-end gap-2 bg-gray-100 p-2 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
+             <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors">
+                 <Smile className="w-6 h-6" />
+             </button>
+             
              <textarea 
                value={newMessage}
                onChange={e => setNewMessage(e.target.value)}
@@ -161,31 +264,34 @@ const ChatRoom = ({
                        sendMessage();
                    }
                }}
-               placeholder="Напишите сообщение..."
-               className="flex-1 bg-transparent px-3 py-2 outline-none text-sm resize-none max-h-32"
+               placeholder="Сообщение..."
+               className="flex-1 bg-transparent py-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500"
                rows={1}
+               style={{ minHeight: '40px' }}
              />
-             <button 
-               onClick={sendMessage} 
-               disabled={!newMessage.trim()}
-               className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors shadow-md mb-0.5"
-             >
-                <Send className="w-5 h-5 ml-0.5" />
-             </button>
+             
+             {newMessage.trim() ? (
+                 <button 
+                   onClick={sendMessage} 
+                   className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white shadow-md hover:bg-purple-700 transition-colors animate-scale-in"
+                 >
+                    <Send className="w-5 h-5 ml-0.5" />
+                 </button>
+             ) : (
+                 <div className="w-10 h-10" /> // Заглушка, чтобы не прыгало
+             )}
           </div>
        </div>
     </div>
   );
 };
 
-// --- ОСНОВНОЙ КОМПОНЕНТ (СПИСОК) ---
+// --- СПИСОК ЧАТОВ ---
 export const ChatList = () => {
   const { user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeChat, setActiveChat] = useState<Conversation | null>(null);
-  
-  // Состояние для модалки поиска
   const [showSearch, setShowSearch] = useState(false);
 
   useEffect(() => {
@@ -194,171 +300,80 @@ export const ChatList = () => {
 
   const fetchConversations = async () => {
     if (!user) return;
-    
     try {
-        // 1. Находим ID чатов, где есть текущий юзер
-        const { data: myChats } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', user.id);
-
-        if (!myChats || myChats.length === 0) {
-            setLoading(false);
-            return;
-        }
+        const { data: myChats } = await supabase.from('conversation_participants').select('conversation_id').eq('user_id', user.id);
+        if (!myChats || myChats.length === 0) { setLoading(false); return; }
 
         const chatIds = myChats.map(c => c.conversation_id);
-
-        // 2. Загружаем данные чатов и участников
         const { data: chats } = await supabase
           .from('conversations')
-          .select(`
-            id, updated_at,
-            conversation_participants (
-               user_id,
-               profiles (id, full_name, avatar_url)
-            )
-          `)
+          .select(`id, updated_at, conversation_participants(user_id, profiles(id, full_name, avatar_url))`)
           .in('id', chatIds)
           .order('updated_at', { ascending: false });
 
         if (chats) {
-            // Преобразуем данные: находим "собеседника" для каждого чата
             const formatted = chats.map((chat: any) => {
-               // Ищем участника, который НЕ я
                const other = chat.conversation_participants.find((p: any) => p.user_id !== user.id)?.profiles;
-               
-               // Если собеседник удалился или баг, ставим заглушку
-               return {
-                 id: chat.id,
-                 updated_at: chat.updated_at,
-                 other_user: other || { id: 'deleted', full_name: 'Удаленный аккаунт', avatar_url: null }
-               };
+               return { id: chat.id, updated_at: chat.updated_at, other_user: other || { id: 'del', full_name: 'Удаленный', avatar_url: null } };
             });
             setConversations(formatted);
         }
-    } catch (e) {
-        console.error("Ошибка загрузки чатов", e);
-    } finally {
-        setLoading(false);
-    }
+    } catch (e) { console.error(e); } 
+    finally { setLoading(false); }
   };
 
   const handleStartNewChat = async (targetUser: any) => {
       setShowSearch(false);
       if (!user) return;
-      
-      // Проверка на самого себя
-      if (targetUser.id === user.id) {
-          alert("Нельзя создать чат с самим собой");
-          return;
-      }
-
       try {
-          // ВЫЗЫВАЕМ НАШУ SQL ФУНКЦИЮ
-          const { data: chatId, error } = await supabase
-            .rpc('create_conversation', { other_user_id: targetUser.id });
-
+          const { data: chatId, error } = await supabase.rpc('create_conversation', { other_user_id: targetUser.id });
           if (error) throw error;
-          
-          // Формируем объект чата для интерфейса
-          const newChatObj: Conversation = {
-              id: chatId, // ID, который вернула база
-              updated_at: new Date().toISOString(),
-              other_user: targetUser
-          };
-          
-          // Проверяем, нет ли уже такого чата в списке (чтобы не дублировать визуально)
+          const newChat = { id: chatId, updated_at: new Date().toISOString(), other_user: targetUser };
           setConversations(prev => {
-              const exists = prev.find(c => c.id === chatId);
-              if (exists) return prev;
-              return [newChatObj, ...prev];
+              if (prev.some(c => c.id === chatId)) return prev;
+              return [newChat, ...prev];
           });
-          
-          // Открываем чат
-          setActiveChat(newChatObj);
-          
-      } catch (e: any) {
-          console.error("Ошибка при создании чата:", e);
-          alert("Не удалось создать чат: " + e.message);
-      }
+          setActiveChat(newChat);
+      } catch (e) { alert("Ошибка чата"); }
   };
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-600 w-8 h-8"/></div>;
 
   return (
     <div className="pb-20 relative min-h-[60vh]">
-       {/* Кнопка создания нового чата (FAB) */}
        <button 
          onClick={() => setShowSearch(true)}
-         className="fixed bottom-24 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40 hover:bg-gray-900"
+         className="fixed bottom-24 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40"
        >
           <Plus className="w-7 h-7" />
        </button>
 
        {conversations.length === 0 ? (
           <div className="text-center py-20 text-gray-400 px-6">
-             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                 <User className="w-8 h-8 text-gray-300"/>
-             </div>
-             <p className="font-medium text-gray-600">У вас пока нет сообщений</p>
-             <p className="text-sm mt-2">Нажмите кнопку +, чтобы найти друзей или специалистов.</p>
+             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4"><User className="w-8 h-8 text-gray-300"/></div>
+             <p>Сообщений пока нет</p>
           </div>
        ) : (
           <div className="divide-y divide-gray-50">
              {conversations.map(chat => (
-                <div 
-                  key={chat.id} 
-                  onClick={() => setActiveChat(chat)}
-                  className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer transition-colors active:bg-gray-100"
-                >
-                   {/* Аватар */}
+                <div key={chat.id} onClick={() => setActiveChat(chat)} className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer active:bg-gray-100">
                    <div className="w-14 h-14 rounded-full bg-gray-200 overflow-hidden border border-gray-100 flex-shrink-0">
-                      {chat.other_user?.avatar_url ? (
-                        <img src={chat.other_user.avatar_url} className="w-full h-full object-cover" alt="User"/>
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gray-100"><User className="w-6 h-6 text-gray-400"/></div>
-                      )}
+                      {chat.other_user?.avatar_url ? <img src={chat.other_user.avatar_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center bg-gray-100"><User className="w-6 h-6 text-gray-400"/></div>}
                    </div>
-                   
-                   {/* Текст */}
                    <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline mb-1">
-                          <h4 className="font-bold text-gray-900 truncate text-base">
-                              {chat.other_user?.full_name || 'Пользователь'}
-                          </h4>
-                          <span className="text-[10px] text-gray-400">
-                              {new Date(chat.updated_at).toLocaleDateString()}
-                          </span>
+                          <h4 className="font-bold text-gray-900 truncate text-base">{chat.other_user?.full_name || 'Пользователь'}</h4>
+                          <span className="text-[10px] text-gray-400">{new Date(chat.updated_at).toLocaleDateString()}</span>
                       </div>
-                      <p className="text-sm text-gray-500 truncate">
-                          Нажмите, чтобы открыть переписку
-                      </p>
+                      <p className="text-sm text-gray-500 truncate">Нажмите для просмотра</p>
                    </div>
                 </div>
              ))}
           </div>
        )}
 
-       {/* Модальное окно чата */}
-       {activeChat && (
-          <ChatRoom 
-            conversationId={activeChat.id} 
-            otherUser={activeChat.other_user} 
-            onClose={() => { 
-                setActiveChat(null); 
-                fetchConversations(); // Обновляем список при выходе, чтобы подтянуть время
-            }} 
-          />
-       )}
-       
-       {/* Модальное окно поиска */}
-       {showSearch && (
-           <UserSearch 
-               onClose={() => setShowSearch(false)} 
-               onUserSelect={handleStartNewChat} 
-           />
-       )}
+       {activeChat && <ChatRoom conversationId={activeChat.id} otherUser={activeChat.other_user} onClose={() => { setActiveChat(null); fetchConversations(); }} />}
+       {showSearch && <UserSearch onClose={() => setShowSearch(false)} onUserSelect={handleStartNewChat} />}
     </div>
   );
 };
