@@ -245,35 +245,42 @@ export const ChatList = () => {
   };
 
   const handleStartNewChat = async (targetUser: any) => {
-      setShowSearch(false); // Закрываем поиск
+      setShowSearch(false);
       if (!user) return;
+      
+      // Проверка на самого себя
+      if (targetUser.id === user.id) {
+          alert("Нельзя создать чат с самим собой");
+          return;
+      }
 
       try {
-          // В реальном приложении здесь нужен RPC вызов "find_or_create_conversation"
-          // Сейчас упрощенно: создаем новый.
-          const { data: conv, error } = await supabase.from('conversations').insert({}).select().single();
+          // ВЫЗЫВАЕМ НАШУ SQL ФУНКЦИЮ
+          const { data: chatId, error } = await supabase
+            .rpc('create_conversation', { other_user_id: targetUser.id });
+
           if (error) throw error;
           
-          // Добавляем участников
-          await supabase.from('conversation_participants').insert([
-              { conversation_id: conv.id, user_id: user.id },
-              { conversation_id: conv.id, user_id: targetUser.id }
-          ]);
-          
-          // Сразу открываем этот чат
+          // Формируем объект чата для интерфейса
           const newChatObj: Conversation = {
-              id: conv.id,
+              id: chatId, // ID, который вернула база
               updated_at: new Date().toISOString(),
               other_user: targetUser
           };
           
-          // Добавляем в список и открываем
-          setConversations(prev => [newChatObj, ...prev]);
+          // Проверяем, нет ли уже такого чата в списке (чтобы не дублировать визуально)
+          setConversations(prev => {
+              const exists = prev.find(c => c.id === chatId);
+              if (exists) return prev;
+              return [newChatObj, ...prev];
+          });
+          
+          // Открываем чат
           setActiveChat(newChatObj);
           
-      } catch (e) {
-          console.error(e);
-          alert("Ошибка при создании чата");
+      } catch (e: any) {
+          console.error("Ошибка при создании чата:", e);
+          alert("Не удалось создать чат: " + e.message);
       }
   };
 
