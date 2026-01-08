@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { createPortal } from 'react-dom'; // <--- ВАЖНЫЙ ИМПОРТ
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, X } from 'lucide-react';
@@ -21,9 +21,10 @@ type Conversation = {
   } | null;
 };
 
-const COMMON_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "🤔", "👀", "🙏"];
+// Набор эмодзи
+const COMMON_EMOJIS = ["😂", "❤️", "👍", "🔥", "😭", "😍", "😮", "😡", "🥳", "🤔"];
 
-// --- КОМПОНЕНТ: РЕАКЦИИ (Всплывашка) ---
+// --- КОМПОНЕНТ: РЕАКЦИИ (Всплывашка над сообщением) ---
 const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
   const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
   
@@ -54,7 +55,7 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
 // --- КОМПОНЕНТ: ЭМОДЗИ ДЛЯ ИНПУТА ---
 const InputEmojiPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
     return (
-      <div className="absolute bottom-20 left-2 bg-white shadow-2xl border border-gray-200 p-3 rounded-2xl grid grid-cols-5 gap-2 z-[100] animate-fade-in w-72">
+      <div className="absolute bottom-16 left-2 bg-white shadow-2xl border border-gray-200 p-3 rounded-2xl grid grid-cols-5 gap-2 z-[100] animate-fade-in w-72 mb-2">
           <div className="col-span-5 flex justify-between items-center mb-1 pb-1 border-b border-gray-100">
               <span className="text-xs font-bold text-gray-400 uppercase">Эмодзи</span>
               <button onClick={onClose}><X className="w-4 h-4 text-gray-400"/></button>
@@ -123,7 +124,7 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
   );
 };
 
-// --- КОМПОНЕНТ: КОМНАТА ЧАТА (ИСПОЛЬЗУЕТ PORTAL) ---
+// --- КОМПОНЕНТ: КОМНАТА ЧАТА (PORTAL) ---
 const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: string, otherUser: any, onClose: () => void }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -152,11 +153,17 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   }, [conversationId]);
 
   const fetchMessages = async () => {
-    const { data: msgs } = await supabase
+    // ДЕБАГ: Проверяем, есть ли ошибка при загрузке
+    const { data: msgs, error } = await supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
+
+    if (error) {
+        console.error("ОШИБКА ЗАГРУЗКИ СООБЩЕНИЙ:", error);
+        return;
+    }
 
     if (msgs) {
         const msgIds = msgs.map(m => m.id);
@@ -188,14 +195,18 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     setShowEmojiPicker(false);
 
     try {
-        await supabase.from('messages').insert({
+        const { error } = await supabase.from('messages').insert({
             conversation_id: conversationId,
             user_id: user.id,
             content: content
         });
+        
+        if (error) throw error;
+
         await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
     } catch (e) {
-        alert("Ошибка отправки");
+        console.error("Ошибка отправки:", e);
+        alert("Ошибка отправки сообщения");
     }
   };
 
@@ -221,8 +232,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       setNewMessage(prev => prev + emoji);
   };
 
-  // --- ВОТ ОН, ТЕЛЕПОРТ! ---
-  // Мы рендерим этот кусок не внутри <App>, а прямо в document.body
   return createPortal(
     <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh]">
        
@@ -303,7 +312,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           </div>
        </div>
     </div>,
-    document.body // Рендерим прямо в body!
+    document.body
   );
 };
 
