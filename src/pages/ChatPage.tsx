@@ -246,7 +246,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                     .from('community_posts')
                     .select(`
                         id, content, user_id,
-                        profiles(full_name),
+                        profiles:user_id(full_name),
                         post_media(media_url)
                     `)
                     .in('id', postIds)
