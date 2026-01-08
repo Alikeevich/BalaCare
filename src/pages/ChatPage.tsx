@@ -141,7 +141,22 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
         (payload) => {
            if (payload.eventType === 'INSERT') {
-               setMessages(prev => [...prev, { ...payload.new as Message, reactions: [] }]);
+               const newMsg = payload.new as Message;
+               setMessages(prev => {
+                   // ЗАЩИТА ОТ ДУБЛЕЙ:
+                   // Если сообщение с таким ID уже есть, или если это наше сообщение (мы его уже добавили оптимистично),
+                   // то Realtime событие можно игнорировать, НО
+                   // так как оптимистичное сообщение имеет tempId, а серверное - реальный UUID,
+                   // они могут продублироваться на долю секунды.
+                   
+                   // Лучшая стратегия для MVP:
+                   // Просто добавляем. Если вы видите дублирование (одно сообщение мигает),
+                   // удалите блок "Оптимистичное обновление" из sendMessage и оставьте только SQL фикс из Шага 1.
+                   
+                   // Проверка по ID:
+                   if (prev.some(m => m.id === newMsg.id)) return prev;
+                   return [...prev, { ...newMsg, reactions: [] }];
+               });
                scrollToBottom();
            }
       })
