@@ -1,14 +1,23 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom'; // Для перехода к посту
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, X, MoreVertical } from 'lucide-react';
+import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, X, MoreVertical, ExternalLink } from 'lucide-react';
 import { Database } from '../types/supabase';
 import UserSearch from '../components/UserSearch';
 
 // --- ТИПЫ ---
 type Message = Database['public']['Tables']['messages']['Row'] & {
   reactions?: { emoji: string; user_id: string }[];
+  // Расширяем тип сообщения данными о посте
+  community_posts?: {
+      id: string;
+      content: string;
+      user_id: string;
+      profiles: { full_name: string | null } | null;
+      post_media: { media_url: string }[];
+  } | null;
 };
 
 type Conversation = {
@@ -71,7 +80,53 @@ const InputEmojiPicker = ({ onSelect }: { onSelect: (emoji: string) => void }) =
     );
 };
 
-// --- КОМПОНЕНТ: СООБЩЕНИЕ (КРАСИВОЕ) ---
+// --- КОМПОНЕНТ: КАРТОЧКА ПОСТА ВНУТРИ ЧАТА ---
+const PostPreviewCard = ({ post }: { post: NonNullable<Message['community_posts']> }) => {
+    const navigate = useNavigate();
+    // Берем первую картинку, если есть
+    const image = post.post_media && post.post_media.length > 0 ? post.post_media[0].media_url : null;
+
+    const handleClick = (e: React.MouseEvent) => {
+        e.stopPropagation(); // Чтобы не сработал клик по сообщению (реакции)
+        navigate(`/community?postId=${post.id}`);
+    };
+
+    return (
+        <div 
+            onClick={handleClick}
+            className="mt-1 mb-2 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden cursor-pointer hover:bg-gray-100 transition-colors w-full min-w-[200px]"
+        >
+            {/* Автор поста */}
+            <div className="px-3 py-2 flex items-center gap-2 border-b border-gray-100/50">
+                <div className="w-5 h-5 rounded-full bg-purple-100 flex items-center justify-center border border-purple-200">
+                    <User className="w-3 h-3 text-purple-600" />
+                </div>
+                <span className="text-xs font-bold text-gray-700 truncate max-w-[120px]">
+                    {post.profiles?.full_name || 'Автор'}
+                </span>
+            </div>
+
+            {/* Картинка */}
+            {image && (
+                <div className="h-28 w-full bg-gray-200 relative">
+                    <img src={image} className="w-full h-full object-cover" alt="Post" />
+                </div>
+            )}
+
+            {/* Текст */}
+            <div className="px-3 py-2">
+                <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed font-medium">
+                    {post.content || (image ? 'Фотография' : 'Без текста')}
+                </p>
+                <div className="mt-2 text-[10px] text-purple-600 font-bold flex items-center gap-1 uppercase tracking-wide">
+                    Открыть пост <ExternalLink className="w-3 h-3" />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- КОМПОНЕНТ: СООБЩЕНИЕ ---
 const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, onReact: (id: string, emoji: string) => void }) => {
   const [showReactions, setShowReactions] = useState(false);
 
@@ -82,17 +137,15 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
 
   return (
     <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} mb-4 relative group px-2`}>
-      <div className={`max-w-[80%] relative flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+      <div className={`max-w-[85%] relative flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
         
-        {/* Тело сообщения */}
         <div 
-          // ИЗМЕНЕНИЕ: Запрет на реакцию самому себе
           onDoubleClick={() => !isMe && onReact(msg.id, '❤️')} 
           onClick={() => !isMe && setShowReactions(!showReactions)}
-          className={`px-4 py-2.5 text-[15px] shadow-sm relative transition-all ${
+          className={`px-3 py-2 text-[15px] shadow-sm relative transition-all ${
             isMe 
               ? 'bg-purple-600 text-white rounded-2xl rounded-tr-sm' 
-              : 'bg-white text-gray-900 rounded-2xl rounded-tl-sm border border-gray-100 cursor-pointer' // cursor-pointer только для чужих
+              : 'bg-white text-gray-900 rounded-2xl rounded-tl-sm border border-gray-100 cursor-pointer'
           }`}
           style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
         >
@@ -103,7 +156,15 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
              />
           )}
 
-          <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+          {/* ВСТАВКА КАРТОЧКИ ПОСТА */}
+          {msg.community_posts && (
+              <PostPreviewCard post={msg.community_posts} />
+          )}
+
+          {/* Текст сообщения. Скрываем дефолтный текст "Поделился постом", если есть карточка */}
+          {(msg.content && (msg.content !== 'Поделился постом' || !msg.community_posts)) && (
+              <p className="whitespace-pre-wrap leading-relaxed px-1">{msg.content}</p>
+          )}
           
           <div className={`text-[10px] flex items-center justify-end gap-1 mt-1 ${isMe ? 'text-purple-200' : 'text-gray-400'}`}>
              <span>{new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
@@ -111,7 +172,7 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
           </div>
         </div>
 
-        {/* Реакции под сообщением */}
+        {/* Реакции */}
         {Object.keys(reactionCounts).length > 0 && (
           <div className={`flex gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'} absolute -bottom-3 ${isMe ? 'right-0' : 'left-0'}`}>
              {Object.entries(reactionCounts).map(([emoji, count]) => (
@@ -127,7 +188,7 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
   );
 };
 
-// --- КОМПОНЕНТ: КОМНАТА ЧАТА ---
+// --- КОМПОНЕНТ: КОМНАТА ЧАТА (ГЛАВНЫЙ ЭКРАН) ---
 const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: string, otherUser: any, onClose: () => void }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -140,25 +201,21 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   useEffect(() => {
     fetchMessages();
 
-    // Канал для сообщений и реакций
+    // Подписка на сообщения
     const channel = supabase
       .channel(`room:${conversationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
         (payload) => {
            if (payload.eventType === 'INSERT') {
-               const newMsg = payload.new as Message;
-               setMessages(prev => {
-                   if (prev.some(m => m.id === newMsg.id)) return prev;
-                   return [...prev, { ...newMsg, reactions: [] }];
-               });
-               scrollToBottom();
+               // При новом сообщении перезагружаем список, чтобы подтянуть данные поста (join)
+               fetchMessages(); 
            }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
         () => { fetchMessages(); })
       .subscribe();
 
-    // Канал для статуса "В сети"
+    // Подписка на статус онлайн
     const presenceChannel = supabase.channel('online-users');
     presenceChannel.on('presence', { event: 'sync' }, () => {
         const state = presenceChannel.presenceState();
@@ -176,9 +233,17 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   }, [conversationId]);
 
   const fetchMessages = async () => {
+    // ВАЖНОЕ ИЗМЕНЕНИЕ: Запрашиваем вложенные данные community_posts
     const { data: msgs } = await supabase
       .from('messages')
-      .select('*')
+      .select(`
+        *,
+        community_posts (
+            id, content, user_id,
+            profiles(full_name),
+            post_media(media_url)
+        )
+      `)
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
 
@@ -191,9 +256,11 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
 
         const combined = msgs.map(m => ({
             ...m,
+            // @ts-ignore
             reactions: reactions?.filter(r => r.message_id === m.id) || []
         }));
 
+        // @ts-ignore
         setMessages(combined);
         scrollToBottom();
     }
@@ -209,7 +276,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
     setNewMessage('');
-    // Не закрываем клавиатуру эмодзи, если она открыта
+    // setShowEmojiPicker(false); 
 
     try {
         await supabase.from('messages').insert({
@@ -276,7 +343,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
 
        {/* MESSAGES LIST */}
        <div className="flex-1 overflow-y-auto min-h-0 relative">
-          {/* Background Doodle */}
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
                style={{ 
                    backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E")` 
@@ -321,7 +387,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                   className="w-full bg-transparent py-2.5 px-3 outline-none text-[15px] resize-none max-h-32 text-gray-900 placeholder-gray-500 leading-relaxed"
                   rows={1}
                   style={{ minHeight: '44px' }}
-                />
+               />
              </div>
              
              <button 
@@ -337,7 +403,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
              </button>
           </div>
 
-          {/* Emoji Keyboard */}
           {showEmojiPicker && <InputEmojiPicker onSelect={addEmoji} />}
        </div>
     </div>,
@@ -416,7 +481,7 @@ export const ChatList = () => {
     <div className="pb-24 relative min-h-[60vh]">
        <button 
          onClick={() => setShowSearch(true)}
-         className="fixed bottom-48 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40 hover:bg-gray-800"
+         className="fixed bottom-32 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40 hover:bg-gray-800"
        >
           <Plus className="w-7 h-7" />
        </button>
