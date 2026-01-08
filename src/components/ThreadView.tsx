@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom'; // <--- ГЛАВНЫЙ ИМПОРТ
+import { createPortal } from 'react-dom';
 import { X, Loader2, User, CornerDownRight, Send } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -30,6 +30,7 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onPostUpdate, on
   const [comments, setComments] = useState<CommentWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // Состояние ввода
   const [newComment, setNewComment] = useState('');
   const [sending, setSending] = useState(false);
   const [replyTo, setReplyTo] = useState<{ id: string, name: string } | null>(null);
@@ -106,7 +107,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onPostUpdate, on
 
   const CommentNode = ({ comment, depth = 0 }: { comment: CommentWithProfile, depth?: number }) => (
     <div className={`relative ${depth > 0 ? 'ml-8 mt-4' : 'mt-6'}`}>
-       {/* Линии иерархии для вложенных комментов */}
        {depth > 0 && <div className="absolute -left-5 top-[-14px] w-4 h-4 border-l-2 border-b-2 border-gray-200 rounded-bl-xl"></div>}
        
        <div className="flex gap-3">
@@ -131,7 +131,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onPostUpdate, on
                 <p className="text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap">{comment.content}</p>
              </div>
              
-             {/* Кнопка "Ответить" */}
              <button 
                onClick={() => setReplyTo({ id: comment.id, name: comment.profiles?.full_name || 'Аноним' })}
                className="text-xs font-semibold text-gray-500 mt-1 ml-1 hover:text-purple-600 px-2 py-1"
@@ -145,7 +144,6 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onPostUpdate, on
     </div>
   );
 
-  // ИСПОЛЬЗУЕМ ПОРТАЛ
   return createPortal(
     <div className="fixed inset-0 z-[9999] bg-white flex flex-col h-[100dvh]">
       
@@ -180,12 +178,11 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onPostUpdate, on
               <CommentNode key={comment.id} comment={comment} />
             ))
           )}
-          {/* Пустой блок в конце, чтобы прокрутить контент над инпутом */}
           <div className="h-32"></div>
         </div>
       </div>
 
-      {/* Input Area (Sticky Bottom) */}
+      {/* Input Area */}
       <div className="flex-none bg-white border-t border-gray-200 p-3 z-20 w-full" style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}>
         {replyTo && (
            <div className="flex justify-between items-center bg-purple-50 px-4 py-2 rounded-t-xl text-xs text-purple-700 mb-1 mx-1 border border-purple-100 border-b-0">
@@ -204,7 +201,8 @@ const ThreadView: React.FC<ThreadViewProps> = ({ post, onClose, onPostUpdate, on
            
            <textarea 
              value={newComment}
-             onChange={e => setNewMessage(e.target.value)}
+             // ИСПРАВЛЕНО: setNewComment вместо setNewMessage
+             onChange={e => setNewComment(e.target.value)} 
              placeholder={replyTo ? "Ваш ответ..." : "Добавьте комментарий..."}
              className="flex-1 bg-transparent text-[15px] focus:outline-none placeholder-gray-400 px-2 py-2 max-h-32 resize-none leading-normal"
              rows={1}
