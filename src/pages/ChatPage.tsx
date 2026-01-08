@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom'; // Для перехода к посту
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, X, MoreVertical, ExternalLink } from 'lucide-react';
@@ -10,7 +10,6 @@ import UserSearch from '../components/UserSearch';
 // --- ТИПЫ ---
 type Message = Database['public']['Tables']['messages']['Row'] & {
   reactions?: { emoji: string; user_id: string }[];
-  // Расширяем тип сообщения данными о посте
   community_posts?: {
       id: string;
       content: string;
@@ -83,11 +82,10 @@ const InputEmojiPicker = ({ onSelect }: { onSelect: (emoji: string) => void }) =
 // --- КОМПОНЕНТ: КАРТОЧКА ПОСТА ВНУТРИ ЧАТА ---
 const PostPreviewCard = ({ post }: { post: NonNullable<Message['community_posts']> }) => {
     const navigate = useNavigate();
-    // Берем первую картинку, если есть
     const image = post.post_media && post.post_media.length > 0 ? post.post_media[0].media_url : null;
 
     const handleClick = (e: React.MouseEvent) => {
-        e.stopPropagation(); // Чтобы не сработал клик по сообщению (реакции)
+        e.stopPropagation();
         navigate(`/community?postId=${post.id}`);
     };
 
@@ -96,7 +94,6 @@ const PostPreviewCard = ({ post }: { post: NonNullable<Message['community_posts'
             onClick={handleClick}
             className="mt-1 mb-2 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden cursor-pointer hover:bg-gray-100 transition-colors w-full min-w-[200px]"
         >
-            {/* Автор поста */}
             <div className="px-3 py-2 flex items-center gap-2 border-b border-gray-100/50">
                 <div className="w-5 h-5 rounded-full bg-purple-100 flex items-center justify-center border border-purple-200">
                     <User className="w-3 h-3 text-purple-600" />
@@ -106,14 +103,12 @@ const PostPreviewCard = ({ post }: { post: NonNullable<Message['community_posts'
                 </span>
             </div>
 
-            {/* Картинка */}
             {image && (
                 <div className="h-28 w-full bg-gray-200 relative">
                     <img src={image} className="w-full h-full object-cover" alt="Post" />
                 </div>
             )}
 
-            {/* Текст */}
             <div className="px-3 py-2">
                 <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed font-medium">
                     {post.content || (image ? 'Фотография' : 'Без текста')}
@@ -156,12 +151,10 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
              />
           )}
 
-          {/* ВСТАВКА КАРТОЧКИ ПОСТА */}
           {msg.community_posts && (
               <PostPreviewCard post={msg.community_posts} />
           )}
 
-          {/* Текст сообщения. Скрываем дефолтный текст "Поделился постом", если есть карточка */}
           {(msg.content && (msg.content !== 'Поделился постом' || !msg.community_posts)) && (
               <p className="whitespace-pre-wrap leading-relaxed px-1">{msg.content}</p>
           )}
@@ -172,7 +165,6 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
           </div>
         </div>
 
-        {/* Реакции */}
         {Object.keys(reactionCounts).length > 0 && (
           <div className={`flex gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'} absolute -bottom-3 ${isMe ? 'right-0' : 'left-0'}`}>
              {Object.entries(reactionCounts).map(([emoji, count]) => (
@@ -201,21 +193,18 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   useEffect(() => {
     fetchMessages();
 
-    // Подписка на сообщения
+    // Подписка на изменения (messages и reactions)
     const channel = supabase
       .channel(`room:${conversationId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` }, 
-        (payload) => {
-           if (payload.eventType === 'INSERT') {
-               // При новом сообщении перезагружаем список, чтобы подтянуть данные поста (join)
-               fetchMessages(); 
-           }
+        () => {
+           // При любом изменении перезагружаем всё (надежнее всего для сложных данных)
+           fetchMessages(); 
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
         () => { fetchMessages(); })
       .subscribe();
 
-    // Подписка на статус онлайн
     const presenceChannel = supabase.channel('online-users');
     presenceChannel.on('presence', { event: 'sync' }, () => {
         const state = presenceChannel.presenceState();
@@ -232,32 +221,53 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     };
   }, [conversationId]);
 
+  // --- ИСПРАВЛЕННАЯ ФУНКЦИЯ ЗАГРУЗКИ ---
   const fetchMessages = async () => {
-    // ВАЖНОЕ ИЗМЕНЕНИЕ: Запрашиваем вложенные данные community_posts
-    const { data: msgs } = await supabase
+    // 1. Грузим сообщения
+    const { data: msgs, error } = await supabase
       .from('messages')
-      .select(`
-        *,
-        community_posts (
-            id, content, user_id,
-            profiles(full_name),
-            post_media(media_url)
-        )
-      `)
+      .select('*')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
 
+    if (error) {
+        console.error("Ошибка загрузки:", error);
+        return;
+    }
+
     if (msgs) {
+        // 2. Собираем ID для подгрузки связанных данных
+        const postIds = msgs.filter(m => m.post_id).map(m => m.post_id);
         const msgIds = msgs.map(m => m.id);
-        const { data: reactions } = await supabase
-            .from('message_reactions')
-            .select('message_id, emoji, user_id')
-            .in('message_id', msgIds);
+
+        // 3. Параллельно грузим посты и реакции
+        const [postsResponse, reactionsResponse] = await Promise.all([
+            postIds.length > 0 
+                ? supabase
+                    .from('community_posts')
+                    .select(`
+                        id, content, user_id,
+                        profiles(full_name),
+                        post_media(media_url)
+                    `)
+                    .in('id', postIds)
+                : Promise.resolve({ data: [] }),
+            
+            supabase
+                .from('message_reactions')
+                .select('message_id, emoji, user_id')
+                .in('message_id', msgIds)
+        ]);
+
+        // 4. Мапим данные
+        const postsMap = new Map(postsResponse.data?.map((p: any) => [p.id, p]));
+        const reactionsData = reactionsResponse.data || [];
 
         const combined = msgs.map(m => ({
             ...m,
+            reactions: reactionsData.filter((r: any) => r.message_id === m.id) || [],
             // @ts-ignore
-            reactions: reactions?.filter(r => r.message_id === m.id) || []
+            community_posts: m.post_id ? postsMap.get(m.post_id) : null
         }));
 
         // @ts-ignore
@@ -276,7 +286,6 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
     setNewMessage('');
-    // setShowEmojiPicker(false); 
 
     try {
         await supabase.from('messages').insert({
@@ -387,7 +396,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                   className="w-full bg-transparent py-2.5 px-3 outline-none text-[15px] resize-none max-h-32 text-gray-900 placeholder-gray-500 leading-relaxed"
                   rows={1}
                   style={{ minHeight: '44px' }}
-               />
+                />
              </div>
              
              <button 
