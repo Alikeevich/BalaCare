@@ -193,11 +193,16 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
   };
 
   return (
-    // z-[9999] - МАКСИМАЛЬНЫЙ приоритет, выше navbar (z-40)
-    <div className="fixed inset-0 z-[9999] bg-[#F2F2F7] flex flex-col">
+    // ФИКС: Используем Grid layout вместо Flex для гарантированного прижатия низа
+    // h-[100dvh] - динамическая высота вьюпорта (игнорирует адресную строку)
+    // z-[3000] - перекрывает все
+    <div 
+      className="fixed inset-0 z-[3000] bg-[#F2F2F7] grid grid-rows-[auto_1fr_auto]"
+      style={{ height: '100dvh', maxHeight: '-webkit-fill-available' }}
+    >
        
-       {/* HEADER */}
-       <div className="flex-shrink-0 px-4 py-3 bg-white/90 backdrop-blur border-b border-gray-200 flex items-center gap-3 shadow-sm">
+       {/* 1. HEADER (Фиксированная высота) */}
+       <div className="bg-white/90 backdrop-blur border-b border-gray-200 px-4 py-3 flex items-center gap-3 pt-safe-top shadow-sm z-20">
           <button onClick={onClose} className="p-1 -ml-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="w-6 h-6 text-gray-900"/>
           </button>
@@ -216,8 +221,8 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           </div>
        </div>
 
-       {/* MESSAGES LIST */}
-       <div className="flex-1 overflow-y-auto p-4 bg-[#e5e5e5]" style={{ minHeight: 0 }}>
+       {/* 2. MESSAGES LIST (Занимает всё свободное место) */}
+       <div className="overflow-y-auto p-4 bg-[#e5e5e5] w-full">
           <div className="space-y-1">
             {messages.map((msg) => (
                 <MessageBubble 
@@ -231,9 +236,9 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           <div ref={messagesEndRef} className="h-2" />
        </div>
 
-       {/* INPUT AREA */}
-       <div className="flex-shrink-0 bg-white border-t border-gray-200 p-3 safe-area-inset-bottom">
-          <div className="flex items-end gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
+       {/* 3. INPUT AREA (Фиксированный низ) */}
+       <div className="bg-white border-t border-gray-200 p-3 pb-safe z-30 w-full">
+          <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-[24px] focus-within:bg-white focus-within:ring-2 focus-within:ring-purple-500/20 focus-within:border-purple-500/50 border border-transparent transition-all">
              <button className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-200 transition-colors flex-shrink-0">
                  <Smile className="w-6 h-6" />
              </button>
@@ -249,8 +254,8 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
                }}
                placeholder="Сообщение..."
                className="flex-1 bg-transparent py-2 px-2 outline-none text-base resize-none max-h-32 text-gray-900 placeholder-gray-500"
+               style={{ minHeight: '44px' }}
                rows={1}
-               style={{ minHeight: '40px' }}
              />
              
              <button 
@@ -320,12 +325,10 @@ export const ChatList = () => {
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-purple-600 w-8 h-8"/></div>;
 
   return (
-    // Убираем pb-20, чтобы контент не уходил под navbar
-    <div className="fixed bottom-20 right-6 z-50">
-       {/* Кнопка "+" - ИСПРАВЛЕНИЕ: bottom-28 учитывает высоту navbar (~60px + отступ) */}
+    <div className="pb-20 relative min-h-[60vh]">
        <button 
          onClick={() => setShowSearch(true)}
-         className="fixed bottom-28 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-50 hover:bg-gray-800"
+         className="fixed bottom-24 right-6 w-14 h-14 bg-black text-white rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-transform z-40"
        >
           <Plus className="w-7 h-7" />
        </button>
@@ -336,11 +339,11 @@ export const ChatList = () => {
              <p>Сообщений пока нет</p>
           </div>
        ) : (
-          <div className="divide-y divide-gray-50 pb-24">
+          <div className="divide-y divide-gray-50">
              {conversations.map(chat => (
                 <div key={chat.id} onClick={() => setActiveChat(chat)} className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer active:bg-gray-100">
                    <div className="w-14 h-14 rounded-full bg-gray-200 overflow-hidden border border-gray-100 flex-shrink-0">
-                      {chat.other_user?.avatar_url ? <img src={chat.other_user.avatar_url} className="w-full h-full object-cover" alt="Avatar"/> : <div className="w-full h-full flex items-center justify-center bg-gray-100"><User className="w-6 h-6 text-gray-400"/></div>}
+                      {chat.other_user?.avatar_url ? <img src={chat.other_user.avatar_url} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center bg-gray-100"><User className="w-6 h-6 text-gray-400"/></div>}
                    </div>
                    <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-baseline mb-1">
