@@ -9,11 +9,11 @@ const BottomNav: React.FC = () => {
   const currentPath = location.pathname;
   
   const navItems = [
-    { path: '/', label: 'Главная', Icon: Home },
-    { path: '/learn', label: 'Учёба', Icon: BookOpen },
-    { path: '/support', label: 'Помощь', Icon: Heart },
-    { path: '/community', label: 'Чат', Icon: Users },
-    { path: '/market', label: 'Маркет', Icon: ShoppingBag },
+    { path: '/', Icon: Home },
+    { path: '/learn', Icon: BookOpen },
+    { path: '/support', Icon: Heart },
+    { path: '/community', Icon: Users },
+    { path: '/market', Icon: ShoppingBag },
   ];
 
   return (
