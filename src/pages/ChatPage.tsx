@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom'; // <--- ВАЖНЫЙ ИМПОРТ
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, ArrowLeft, Send, User, Plus, Smile, Check, CheckCheck, X } from 'lucide-react';
@@ -20,24 +21,23 @@ type Conversation = {
   } | null;
 };
 
-// Набор эмодзи для инпута
-const COMMON_EMOJIS = ["😂", "❤️", "👍", "🔥", "😭", "😍", "😮", "😡", "🥳", "🤔", "👀", "✅", "🙏", "👋", "🎉"];
+const COMMON_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "🤔", "👀", "🙏"];
 
-// --- КОМПОНЕНТ: РЕАКЦИИ НА СООБЩЕНИЕ (Всплывашка над сообщением) ---
+// --- КОМПОНЕНТ: РЕАКЦИИ (Всплывашка) ---
 const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
   const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
   
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
         // @ts-ignore
-        if (!e.target.closest('.reaction-bubble-picker')) onClose();
+        if (!e.target.closest('.reaction-picker')) onClose();
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
   return (
-    <div className="reaction-bubble-picker absolute -top-12 left-0 bg-white shadow-xl rounded-full px-3 py-2 flex gap-2 animate-scale-in z-50 border border-gray-100">
+    <div className="reaction-picker absolute -top-12 left-0 bg-white shadow-xl rounded-full px-3 py-2 flex gap-2 animate-scale-in z-50 border border-gray-100">
       {emojis.map(emoji => (
         <button 
           key={emoji} 
@@ -51,10 +51,10 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
   );
 };
 
-// --- КОМПОНЕНТ: ЭМОДЗИ ДЛЯ ИНПУТА (Внизу) ---
+// --- КОМПОНЕНТ: ЭМОДЗИ ДЛЯ ИНПУТА ---
 const InputEmojiPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
     return (
-      <div className="absolute bottom-20 left-4 bg-white shadow-2xl border border-gray-200 p-3 rounded-2xl grid grid-cols-5 gap-2 z-[60] animate-fade-in w-64">
+      <div className="absolute bottom-20 left-2 bg-white shadow-2xl border border-gray-200 p-3 rounded-2xl grid grid-cols-5 gap-2 z-[100] animate-fade-in w-72">
           <div className="col-span-5 flex justify-between items-center mb-1 pb-1 border-b border-gray-100">
               <span className="text-xs font-bold text-gray-400 uppercase">Эмодзи</span>
               <button onClick={onClose}><X className="w-4 h-4 text-gray-400"/></button>
@@ -123,12 +123,12 @@ const MessageBubble = ({ msg, isMe, onReact }: { msg: Message, isMe: boolean, on
   );
 };
 
-// --- КОМПОНЕНТ: КОМНАТА ЧАТА ---
+// --- КОМПОНЕНТ: КОМНАТА ЧАТА (ИСПОЛЬЗУЕТ PORTAL) ---
 const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: string, otherUser: any, onClose: () => void }) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false); // Состояние пикера в инпуте
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -145,9 +145,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
            }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, 
-        () => {
-           fetchMessages(); 
-      })
+        () => { fetchMessages(); })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -187,7 +185,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
     if (!newMessage.trim() || !user) return;
     const content = newMessage.trim();
     setNewMessage('');
-    setShowEmojiPicker(false); // Закрываем эмодзи после отправки
+    setShowEmojiPicker(false);
 
     try {
         await supabase.from('messages').insert({
@@ -223,7 +221,9 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
       setNewMessage(prev => prev + emoji);
   };
 
-  return (
+  // --- ВОТ ОН, ТЕЛЕПОРТ! ---
+  // Мы рендерим этот кусок не внутри <App>, а прямо в document.body
+  return createPortal(
     <div className="fixed inset-0 z-[99999] bg-[#F2F2F7] flex flex-col h-[100dvh]">
        
        {/* HEADER */}
@@ -242,7 +242,7 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
           
           <div className="flex-1 min-w-0">
               <span className="font-bold text-gray-900 block truncate">{otherUser?.full_name || 'Собеседник'}</span>
-              <span className="text-xs text-gray-500">в сети</span>
+              <span className="text-xs text-gray-500">онлайн</span>
           </div>
        </div>
 
@@ -262,9 +262,8 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
        </div>
 
        {/* INPUT AREA */}
-       <div className="flex-none bg-white border-t border-gray-200 p-3 pb-24 z-30 w-full relative">
+       <div className="flex-none bg-white border-t border-gray-200 p-3 z-30 w-full relative" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 20px)' }}>
           
-          {/* Picker Компонент */}
           {showEmojiPicker && (
               <InputEmojiPicker 
                   onSelect={addEmoji} 
@@ -303,7 +302,8 @@ const ChatRoom = ({ conversationId, otherUser, onClose }: { conversationId: stri
              </button>
           </div>
        </div>
-    </div>
+    </div>,
+    document.body // Рендерим прямо в body!
   );
 };
 
