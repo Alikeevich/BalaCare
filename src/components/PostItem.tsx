@@ -156,9 +156,9 @@ const PostItem: React.FC<PostItemProps> = ({ post, isDetailView = false, onComme
     <ShareModal 
         isOpen={shareModalOpen} 
         onClose={() => setShareModalOpen(false)} 
-        postText={post.content.slice(0, 100) + (post.content.length > 100 ? '...' : '')}
-        // ГЕНЕРАЦИЯ ПРАВИЛЬНОЙ ССЫЛКИ
+        postText={post.content ? (post.content.slice(0, 100) + '...') : 'Фото'}
         postUrl={`${window.location.origin}/community?postId=${post.id}`}
+        postId={post.id} // <--- ДОБАВИЛИ ЭТО
     />
     </>
   );
